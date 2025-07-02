@@ -1,0 +1,27 @@
+name: Run Evaluation on PR
+
+on:
+  pull_request:
+    branches: [main, staging, dev]
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Run Eval
+        uses: norma-dev/levelapp@main
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          api_host: "https://api.evalapp.dev"
+          vla_credentials: ${{ secrets.VLA_CREDENTIALS }}
+          model_id: ""
+          model_name: "gpt-4"
+          test_name: "PR_Eval"
+          project_id: ${{ secrets.PROJECT_ID }}
+          user_id: ${{ secrets.USER_ID }}
+          batch_id: ""
+          scenario_id: ${{ secrets.SCENARIO_ID }}
+          type: "pr"
