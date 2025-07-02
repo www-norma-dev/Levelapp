@@ -53,8 +53,7 @@ levelapp/
 │   ├── entrypoint.sh
 │   └── README.md
 ├── levelapp-core/           # Core backend logic (batch engine, scoring, metadata diff)
-├── levelapp-scenario-ui/    # Web app to create and manage scenario presets
-├── levelapp-report-ui/      # Optional web dashboard to view reports
+├── levelapp-web/            # Web app to create and manage scenario presets
 ├── levelapp-docs/           # Markdown and guides
 ├── examples/                # Example scenarios, evaluations, API calls
 └── README.md                # You're here!
