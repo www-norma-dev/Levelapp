@@ -2,7 +2,6 @@
 levelapp_core_simulators/service.py: Generic service layer for conversation simulation and evaluation.
 """
 import asyncio
-import logging
 import time
 from typing import Dict, Any, List, Callable, Optional
 from collections import defaultdict
@@ -22,21 +21,20 @@ class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
     """
-    def __init__(self, batch: Any, logger: logging.Logger, evaluation_fn: Optional[Callable] = None, persistence_fn: Optional[Callable] = None):
+    def __init__(self, batch: Any, evaluation_fn: Optional[Callable] = None, persistence_fn: Optional[Callable] = None):
         """
         Initialize the ConversationSimulator.
         Args:
             batch (Any): The batch of scenarios to simulate (user supplies structure).
-            logger (logging.Logger): Logger instance.
             evaluation_fn (Callable): Function to evaluate interactions (user supplies).
             persistence_fn (Callable): Function to persist results (user supplies).
         """
-        self.logger = logger
         self.batch = batch
         self.evaluation_fn = evaluation_fn  # User-supplied evaluation logic
         self.persistence_fn = persistence_fn  # User-supplied persistence logic
         self.collected_scores = defaultdict(list)
         self.evaluation_summaries = defaultdict(list)
+        self.execution_events = []  # Collect execution events instead of logging
 
     def setup_simulator(self, endpoint: str, headers: Dict[str, str]):
         """
@@ -45,11 +43,22 @@ class ConversationSimulator:
         self.endpoint = endpoint
         self.headers = headers
 
+    def _add_event(self, level: str, message: str, context: Dict[str, Any] = None):
+        """
+        Add an execution event instead of logging.
+        """
+        self.execution_events.append({
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "message": message,
+            "context": context or {}
+        })
+
     async def run_batch_test(self, name: str, test_load: Dict[str, Any], attempts: int = 1) -> Dict[str, Any]:
         """
         Run a batch test for the given batch name and details.
         """
-        self.logger.info(f"[run_batch_test] Starting batch test for batch: {name}")
+        self._add_event("INFO", f"Starting batch test for batch: {name}")
         started_at = datetime.now().isoformat()
         start_time = time.time()
         results = await self.simulate_conversation(attempts=attempts)
@@ -64,6 +73,7 @@ class ConversationSimulator:
             "averageScores": results["averageScores"],
             "scenarios": results["scenarios"],
             "averageExecutionTime": average_execution_time,
+            "executionEvents": self.execution_events,  # Include events in results
         }
         if self.persistence_fn:
             self.persistence_fn(test_load)
@@ -73,7 +83,7 @@ class ConversationSimulator:
         """
         Simulate conversations for all scenarios in the batch.
         """
-        self.logger.info("[simulate_conversation] starting conversation simulation..")
+        self._add_event("INFO", "Starting conversation simulation..")
         semaphore = asyncio.Semaphore(value=len(self.batch.scenarios))
         async def run_with_semaphore(scenario: Any) -> Dict[str, Any]:
             async with semaphore:
@@ -106,11 +116,12 @@ class ConversationSimulator:
         """
         Simulate a single scenario with the given number of attempts.
         """
-        self.logger.info(f"[simulate_single_scenario] starting simulation for scenario: {getattr(scenario, 'scenario_id', 'unknown')}")
+        scenario_id = getattr(scenario, 'scenario_id', 'unknown')
+        self._add_event("INFO", f"Starting simulation for scenario: {scenario_id}")
         attempt_results = []
         all_attempts_scores = defaultdict(list)
         for attempt in range(attempts):
-            self.logger.info(f"[simulate_single_scenario] Running attempt: {attempt+1}/{attempts}")
+            self._add_event("INFO", f"Running attempt: {attempt+1}/{attempts}", {"scenario_id": scenario_id})
             start_time = time.time()
             self.collected_scores = defaultdict(list)
             attempt_handoff_checks: List[int] = []
@@ -146,7 +157,7 @@ class ConversationSimulator:
             })
         average_scores = calculate_average_scores(all_attempts_scores)
         return {
-            "scenarioId": getattr(scenario, 'scenario_id', 'unknown'),
+            "scenarioId": scenario_id,
             "attempts": attempt_results,
             "averageScores": average_scores,
         }
@@ -155,7 +166,7 @@ class ConversationSimulator:
         """
         Simulate the initial interaction for a scenario.
         """
-        self.logger.info("[simulate_initial_interaction] Starting initial interaction simulation..")
+        self._add_event("INFO", "Starting initial interaction simulation..")
         start_time = time.time()
         initial_interaction = getattr(scenario, 'initial_interaction', None)
         if initial_interaction is None:
@@ -170,7 +181,10 @@ class ConversationSimulator:
             payload=payload,
         )
         if not response or not response.status_code == 200:
-            self.logger.error("[simulate_initial_interaction] Request failed.")
+            self._add_event("ERROR", "Initial interaction request failed.", {
+                "status_code": response.status_code if response else "No response",
+                "conversation_id": conversation_id
+            })
             return {
                 "userMessage": getattr(initial_interaction, 'message', None),
                 "reply": "Request failed",
@@ -213,7 +227,7 @@ class ConversationSimulator:
         """
         Simulate inbound interactions for a scenario.
         """
-        self.logger.info("[simulate_inbound_interactions] Starting inbound interactions simulation..")
+        self._add_event("INFO", "Starting inbound interactions simulation..")
         results = []
         inbound_interactions_sequence = getattr(scenario, 'inbound_interactions', [])
         for interaction in inbound_interactions_sequence:
@@ -226,7 +240,11 @@ class ConversationSimulator:
                 payload=payload,
             )
             if not response or not response.status_code == 200:
-                self.logger.error("[simulate_inbound_interaction] Request failed.")
+                self._add_event("ERROR", "Inbound interaction request failed.", {
+                    "status_code": response.status_code if response else "No response",
+                    "conversation_id": conversation_id,
+                    "user_message": user_message
+                })
                 result = {
                     "userMessage": user_message,
                     "reply": "Request failed",
@@ -262,4 +280,4 @@ class ConversationSimulator:
                 "handoffPassCheck": handoff_pass_check,
             }
             results.append(result)
-        return results 
+        return results
