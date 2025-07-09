@@ -2,15 +2,15 @@
 levelapp_core_simulators/utils.py: Generic utility functions for simulation and evaluation.
 """
 import json
-import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable, Union
 import httpx
 import arrow
 from pydantic import ValidationError
 from collections import defaultdict
 from .schemas import InteractionDetails, RelativeDateOption
+from .event_collector import add_event
 
-logger = logging.getLogger("simulator-utils")
+# logger = logging.getLogger("simulator-utils")  # Remove this line
 
 
 def extract_interaction_details(response_text: str) -> InteractionDetails:
@@ -33,10 +33,12 @@ def extract_interaction_details(response_text: str) -> InteractionDetails:
             interaction_type=payload.get("eventType", ""),
         )
     except json.JSONDecodeError as err:
-        logger.error(f"[extract_interaction_details] JSON decoding error: {err}")
+        msg = f"[extract_interaction_details] JSON decoding error: {err}"
+        add_event("ERROR", msg)
         return InteractionDetails()
     except ValidationError as err:
-        logger.error(f"[extract_interaction_details] Pydantic validation error: {err}")
+        msg = f"[extract_interaction_details] Pydantic validation error: {err}"
+        add_event("ERROR", msg)
         return InteractionDetails()
 
 
@@ -53,16 +55,20 @@ async def async_request(url: str, headers: Dict[str, str], payload: Dict[str, An
         Optional[httpx.Response]: The HTTP response if successful, otherwise None.
     """
     try:
-        logger.info(f"[async_request] Request payload:\n{payload}\n---")
+        msg = f"[async_request] Request payload:\n{payload}\n---"
+        add_event("INFO", msg)
         async with httpx.AsyncClient(timeout=900) as client:
             response = await client.post(url=url, headers=headers, json=payload)
-            logger.info(f"[async_request] Response:\n{response.text}\n---")
+            msg = f"[async_request] Response:\n{response.text}\n---"
+            add_event("INFO", msg)
             response.raise_for_status()
             return response
     except httpx.HTTPStatusError as http_err:
-        logger.error(f"[async_request] HTTP error: {http_err.response.text}", exc_info=True)
+        msg = f"[async_request] HTTP error: {http_err.response.text}"
+        add_event("ERROR", msg, {"exc_info": True})
     except httpx.RequestError as req_err:
-        logger.error(f"[async_request] Request error: {str(req_err)}", exc_info=True)
+        msg = f"[async_request] Request error: {str(req_err)}"
+        add_event("ERROR", msg, {"exc_info": True})
     return None
 
 
@@ -78,29 +84,11 @@ def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional
         str: The parsed date in ISO format, or the default value if parsing fails.
     """
     if not raw_date_value:
-        logger.info(f"[parse_date_value] No raw value provided. returning default: '{default_date_value}'")
+        msg = f"[parse_date_value] No raw value provided. returning default: '{default_date_value}'"
+        add_event("INFO", msg)
         return default_date_value
     cleaned = raw_date_value.replace("{{", "").replace("}}", "").replace("_", " ").strip().lower()
     now = arrow.utcnow()
-    try:
-        option = RelativeDateOption(cleaned)
-        match option:
-            case RelativeDateOption.TODAY:
-                return now.format("YYYY-MM-DD")
-            case RelativeDateOption.TOMORROW:
-                return now.shift(days=1).format("YYYY-MM-DD")
-            case RelativeDateOption.TODAY_PLUS_7:
-                return now.shift(days=7).format("YYYY-MM-DD")
-            case RelativeDateOption.IN_1_MONTH:
-                return now.shift(months=1).floor("month").format("YYYY-MM-DD")
-            case RelativeDateOption.IN_2_MONTHS:
-                return now.shift(months=2).floor("month").format("YYYY-MM-DD")
-            case RelativeDateOption.IN_3_MONTHS:
-                return now.shift(months=3).floor("month").format("YYYY-MM-DD")
-            case RelativeDateOption.IN_4_MONTHS:
-                return now.shift(months=4).floor("month").format("YYYY-MM-DD")
-    except ValueError:
-        pass
     try:
         iso_candidate = cleaned.replace(" ", "-")
         return arrow.get(iso_candidate).format("YYYY-MM-DD")
@@ -109,23 +97,24 @@ def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional
     try:
         return now.dehumanize(cleaned).format("YYYY-MM-DD")
     except Exception as e:
-        logger.error(f"[parse_date_value] Failed to parse '{cleaned}': {e}", exc_info=True)
+        msg = f"[parse_date_value] Failed to parse '{cleaned}': {e}"
+        add_event("ERROR", msg, {"exc_info": True})
         return default_date_value
 
 
-def calculate_average_scores(scores: Dict[str, List[float]]) -> Dict[str, float]:
-    """
-    Calculates the average scores for a dictionary of score lists.
+# def calculate_average_scores(scores: Dict[str, List[float]]) -> Dict[str, float]:
+#     """
+#     Calculates the average scores for a dictionary of score lists.
 
-    Args:
-        scores (Dict[str, List[float]]): A dictionary mapping keys to lists of scores.
+#     Args:
+#         scores (Dict[str, List[float]]): A dictionary mapping keys to lists of scores.
 
-    Returns:
-        Dict[str, float]: A dictionary mapping keys to their average score.
-    """
-    def average(values: List[float]) -> float:
-        return round(sum(values) / len(values), 3) if values else 0.0
-    return {key: average(values) for key, values in scores.items()}
+#     Returns:
+#         Dict[str, float]: A dictionary mapping keys to their average score.
+#     """
+#     def average(values: List[float]) -> float:
+#         return round(sum(values) / len(values), 3) if values else 0.0
+#     return {key: average(values) for key, values in scores.items()}
 
 
 def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
@@ -144,27 +133,52 @@ def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
     return {"values": raw, "average": avg}
 
 
-def calculate_average_time_duration(scenarios: List[Dict[str, Any]]) -> float:
+# def calculate_average_time_duration(scenarios: List[Dict[str, Any]]) -> float:
+#     """
+#     Calculates the average execution time across all attempts in all scenarios.
+
+#     Args:
+#         scenarios (List[Dict[str, Any]]): List of scenario dictionaries, each containing attempts.
+
+#     Returns:
+#         float: The average execution time in seconds, or 0.0 if no durations are found.
+#     """
+#     durations = []
+#     for scenario in scenarios:
+#         for attempt in scenario.get("attempts", []):
+#             duration = attempt.get("totalDurationSeconds")
+#             if isinstance(duration, (int, float)):
+#                 durations.append(duration)
+#     if not durations:
+#         return 0.0
+#     return round(sum(durations) / len(durations), 2)
+
+def calculate_average(data: Union[Dict[str, List[float]], List[Dict[str, Any]]]) -> Union[Dict[str, float], float]:
     """
-    Calculates the average execution time across all attempts in all scenarios.
+    Calculates averages depending on input type.
 
     Args:
-        scenarios (List[Dict[str, Any]]): List of scenario dictionaries, each containing attempts.
+        data (Union[Dict[str, List[float]], List[Dict[str, Any]]]): Either a dictionary of lists or a list of scenario dicts.
 
     Returns:
-        float: The average execution time in seconds, or 0.0 if no durations are found.
+        Union[Dict[str, float], float]: Averaged result(s) - dict of averages per key or single average duration.
     """
-    durations = []
-    for scenario in scenarios:
-        for attempt in scenario.get("attempts", []):
-            duration = attempt.get("totalDurationSeconds")
-            if isinstance(duration, (int, float)):
-                durations.append(duration)
-    if not durations:
-        return 0.0
-    return round(sum(durations) / len(durations), 2)
-
-
+    if isinstance(data, dict):  # case for score dictionary
+        return {
+            key: round(sum(values) / len(values), 3) if values else 0.0
+            for key, values in data.items()
+        }
+    elif isinstance(data, list):  # case for scenarios
+        durations = [
+            attempt["totalDurationSeconds"]
+            for scenario in data
+            for attempt in scenario.get("attempts", [])
+            if isinstance(attempt.get("totalDurationSeconds"), (int, float))
+        ]
+        return round(sum(durations) / len(durations), 2) if durations else 0.0
+    else:
+        raise TypeError("Unsupported data type for average calculation.")
+    
 def calculate_rouge_scores(reference: str, candidate: str, metrics: Optional[List[str]] = None, use_stemmer: bool = True) -> Dict[str, Dict[str, float]]:
     """
     Calculates ROUGE scores for a candidate reply against a single reference.
