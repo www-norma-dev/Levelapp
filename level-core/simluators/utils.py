@@ -15,7 +15,13 @@ logger = logging.getLogger("simulator-utils")
 
 def extract_interaction_details(response_text: str) -> InteractionDetails:
     """
-    Extract interaction details from a response.
+    Extracts interaction details from a response text.
+
+    Args:
+        response_text (str): The response text in JSON format.
+
+    Returns:
+        InteractionDetails: Parsed interaction details, or default if parsing fails.
     """
     try:
         data = json.loads(response_text)
@@ -36,7 +42,15 @@ def extract_interaction_details(response_text: str) -> InteractionDetails:
 
 async def async_request(url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> Optional[httpx.Response]:
     """
-    Perform an asynchronous HTTP POST request.
+    Performs an asynchronous HTTP POST request.
+
+    Args:
+        url (str): The endpoint URL.
+        headers (Dict[str, str]): HTTP headers to include in the request.
+        payload (Dict[str, Any]): The JSON payload to send.
+
+    Returns:
+        Optional[httpx.Response]: The HTTP response if successful, otherwise None.
     """
     try:
         logger.info(f"[async_request] Request payload:\n{payload}\n---")
@@ -55,6 +69,13 @@ async def async_request(url: str, headers: Dict[str, str], payload: Dict[str, An
 def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional[str] = "") -> str:
     """
     Cleans and parses a dehumanized relative date string to ISO format.
+
+    Args:
+        raw_date_value (Optional[str]): The raw date string to parse.
+        default_date_value (Optional[str], optional): The default value to return if parsing fails. Defaults to "".
+
+    Returns:
+        str: The parsed date in ISO format, or the default value if parsing fails.
     """
     if not raw_date_value:
         logger.info(f"[parse_date_value] No raw value provided. returning default: '{default_date_value}'")
@@ -95,6 +116,12 @@ def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional
 def calculate_average_scores(scores: Dict[str, List[float]]) -> Dict[str, float]:
     """
     Calculates the average scores for a dictionary of score lists.
+
+    Args:
+        scores (Dict[str, List[float]]): A dictionary mapping keys to lists of scores.
+
+    Returns:
+        Dict[str, float]: A dictionary mapping keys to their average score.
     """
     def average(values: List[float]) -> float:
         return round(sum(values) / len(values), 3) if values else 0.0
@@ -103,7 +130,13 @@ def calculate_average_scores(scores: Dict[str, List[float]]) -> Dict[str, float]
 
 def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
     """
-    From a list of raw handoff_pass_check values (0,1 or None), return both the raw list and the average over only the 0/1 entries.
+    Computes statistics for handoff pass check values.
+
+    Args:
+        values (List[Any]): List of handoff pass check values (0, 1, or None).
+
+    Returns:
+        Dict[str, Any]: Dictionary with the raw values and the average over valid entries.
     """
     raw = list(values)
     clean = [v for v in raw if isinstance(v, int) and v in (0, 1)]
@@ -113,7 +146,13 @@ def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
 
 def calculate_average_time_duration(scenarios: List[Dict[str, Any]]) -> float:
     """
-    Calculate the average execution time across all attempts in all scenarios.
+    Calculates the average execution time across all attempts in all scenarios.
+
+    Args:
+        scenarios (List[Dict[str, Any]]): List of scenario dictionaries, each containing attempts.
+
+    Returns:
+        float: The average execution time in seconds, or 0.0 if no durations are found.
     """
     durations = []
     for scenario in scenarios:
@@ -128,7 +167,16 @@ def calculate_average_time_duration(scenarios: List[Dict[str, Any]]) -> float:
 
 def calculate_rouge_scores(reference: str, candidate: str, metrics: Optional[List[str]] = None, use_stemmer: bool = True) -> Dict[str, Dict[str, float]]:
     """
-    Calculate ROUGE scores for a candidate reply against a single reference.
+    Calculates ROUGE scores for a candidate reply against a single reference.
+
+    Args:
+        reference (str): The reference text.
+        candidate (str): The candidate text to evaluate.
+        metrics (Optional[List[str]], optional): List of ROUGE metrics to compute. Defaults to ['rouge1', 'rouge2', 'rougeL'].
+        use_stemmer (bool, optional): Whether to use stemming. Defaults to True.
+
+    Returns:
+        Dict[str, Dict[str, float]]: Dictionary of ROUGE scores for each metric.
     """
     from rouge_score import rouge_scorer
     if metrics is None:
@@ -147,7 +195,14 @@ def calculate_rouge_scores(reference: str, candidate: str, metrics: Optional[Lis
 
 def summarize_justifications(justifications: List[Dict[str, str]], max_bullets: int = 5) -> List[str]:
     """
-    Summarize the justifications for each judge. (Placeholder: user should supply their own Reply logic.)
+    Summarizes the justifications for each judge.
+
+    Args:
+        justifications (List[Dict[str, str]]): List of justification dictionaries with 'justification' and 'scenario'.
+        max_bullets (int, optional): Maximum number of summarized justifications to return. Defaults to 5.
+
+    Returns:
+        List[str]: List of summarized justifications, grouped by justification text.
     """
     # Placeholder: implement your own summarization logic or LLM call here
     grouped = defaultdict(list)
