@@ -14,7 +14,7 @@ class InteractionDetails(BaseModel):
 
 class InteractionEvaluationResult(BaseModel):
     """Model representing the evaluation result of an interaction."""
-    evaluations: Dict[str, Any]  # e.g., {"llm1": {...}, "llm2": {...}}
+    evaluations: Dict[str, Any] 
     extracted_metadata_evaluation: float
     scenario_id: str
 
