@@ -4,17 +4,17 @@
 
 import re
 import datetime
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Callable
 
-import Levenshtein
+from rapidfuzz import fuzz  # Using Rapidfuzz's fuzz module for text similarity
 
-
-# Removed project-specific hardcoded field parsers
-# and generalized to handle any field type dynamically.
-
-
-
-from rapidfuzz import fuzz  # Trying now with the Rapidfuzz's fuzz module
+# Define a flexible parser registry for field types, which can be customized later.
+FIELD_PARSERS: Dict[str, Callable[[Any], Any]] = {
+    "float": lambda val: parse_float(val),
+    "date": lambda val: parse_date(val),
+    "string": lambda val: str(val).strip().lower(),
+    # You can add more parsers for other types dynamically if needed
+}
 
 def levenshtein_f1(a: str, b: str) -> float:
     """
@@ -25,7 +25,7 @@ def levenshtein_f1(a: str, b: str) -> float:
         b (str): Second string.
 
     Returns:
-        float: F1 score between 0.0 and 1.0.
+        float: Similarity score between 0.0 and 1.0.
     """
     a, b = a.lower(), b.lower()
     if not a or not b:
@@ -44,7 +44,7 @@ def parse_float(val: Any) -> Optional[float]:
         val (Any): The value to parse.
 
     Returns:
-        Optional[float]: Parsed float or None.
+        Optional[float]: Parsed float or None if parsing fails.
     """
     try:
         return float(val)
@@ -54,13 +54,13 @@ def parse_float(val: Any) -> Optional[float]:
 
 def parse_date(s: str) -> Optional[datetime.date]:
     """
-    Attempt to parse a date from string using flexible formats.
+    Attempt to parse a date from a string using flexible formats.
 
     Args:
         s (str): Input date string.
 
     Returns:
-        Optional[datetime.date]: Parsed date or None.
+        Optional[datetime.date]: Parsed date or None if parsing fails.
     """
     s = re.sub(r'[/.]', '-', s)
     for fmt in ('%d-%m-%Y', '%Y-%m-%d', '%m-%d-%Y'):
@@ -72,69 +72,64 @@ def parse_date(s: str) -> Optional[datetime.date]:
     return None
 
 
-def parse_value(field: str, raw_val: Any) -> Any:
+def parse_value(field_type: str, raw_val: Any) -> Any:
     """
-    Normalize a raw metadata field value based on expected type.
+    Normalize a raw value based on the expected field type.
 
     Args:
-        field (str): Field name (e.g., "beds", "moveInDate").
+        field_type (str): Expected field type (e.g., "float", "date", "string").
         raw_val (Any): Raw value to normalize.
 
     Returns:
-        Any: Parsed or normalized value (float, date, or lowercase string).
+        Any: Parsed or normalized value (float, date, or string).
     """
-    parser_type = FIELD_PARSERS.get(field, "string")
-
-    if parser_type == "float":
-        return parse_float(raw_val)
-    elif parser_type == "date":
-        return parse_date(str(raw_val))
-
-    return str(raw_val).strip().lower()
+    parser = FIELD_PARSERS.get(field_type, FIELD_PARSERS["string"])  # Default to string if no parser is found
+    return parser(raw_val)
 
 
-def compare_values(field: str, expected_val: Any, actual_val: Any) -> float:
+def compare_values(field_type: str, expected_val: Any, actual_val: Any) -> float:
     """
-    Compare two values for a specific metadata field.
+    Compare two values for a specific field, using the appropriate parsing and similarity metrics.
 
     Args:
-        field (str): The field name (e.g., "budget").
+        field_type (str): The field's expected type (e.g., "float", "date").
         expected_val (Any): Ground truth value.
         actual_val (Any): Predicted or extracted value.
 
     Returns:
         float: Similarity score between 0.0 and 1.0.
     """
-    parsed_exp = parse_value(field, expected_val)
-    parsed_act = parse_value(field, actual_val)
+    parsed_exp = parse_value(field_type, expected_val)
+    parsed_act = parse_value(field_type, actual_val)
 
-    parser_type = FIELD_PARSERS.get(field)
-
-    if parser_type == "float" and parsed_exp is not None and parsed_act is not None:
+    if field_type == "float" and parsed_exp is not None and parsed_act is not None:
+        # Using exact match if the float values are within a very small tolerance.
         return 1.0 if abs(parsed_exp - parsed_act) < 1e-6 else levenshtein_f1(str(expected_val), str(actual_val))
 
-    if parser_type == "date" and parsed_exp and parsed_act:
+    if field_type == "date" and parsed_exp and parsed_act:
         return 1.0 if parsed_exp == parsed_act else levenshtein_f1(str(expected_val), str(actual_val))
 
+    # Default comparison (strings and fallback)
     return 1.0 if parsed_exp == parsed_act else levenshtein_f1(str(expected_val), str(actual_val))
 
 
-def evaluate_metadata(expected: Dict[str, Any], actual: Dict[str, Any]) -> float:
+def evaluate_metadata(expected: Dict[str, Any], actual: Dict[str, Any], field_types: Dict[str, str]) -> float:
     """
-    Evaluate similarity between expected and actual metadata dictionaries.
+    Evaluate the similarity between expected and actual metadata dictionaries across dynamic fields.
 
     Args:
         expected (Dict[str, Any]): Reference metadata.
         actual (Dict[str, Any]): Extracted metadata.
+        field_types (Dict[str, str]): Dictionary specifying the expected field type for each key.
 
     Returns:
         float: Average similarity score across all relevant fields.
     """
-    fields = ["beds", "baths", "pets", "budget", "moveInDate"]
-    relevant = [f for f in fields if f in expected]
+    relevant = [f for f in field_types if f in expected]
 
     if not relevant:
         return 0.0
 
-    scores = [compare_values(f, expected[f], actual.get(f)) for f in relevant]
+    # Comparing values based on dynamic field types
+    scores = [compare_values(field_types.get(f, "string"), expected[f], actual.get(f)) for f in relevant]
     return sum(scores) / len(scores)
