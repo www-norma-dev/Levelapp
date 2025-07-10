@@ -17,6 +17,8 @@ from firestore.schemas import ScenarioBatch, ExtractionBundle, DocType
 from .constants import DEFAULT_SCENARIO_FIELD  
 from .paths import get_document_path, get_results_path, store_extracted_dataa_path, save_batch_results_path  
 from base import BaseDatastore
+from .exceptions import FirestoreServiceError
+
 
 ERROR_MESSAGES = {
     "document_not_found": "Document not found.",
@@ -43,6 +45,20 @@ class FirestoreService(BaseDatastore):
 
     @staticmethod
     def parser(doc: DocumentSnapshot, model: Type[BaseModel]) -> BaseModel:
+        """
+        Parse a Firestore document into a validated Pydantic model.
+
+        Args:
+            doc (DocumentSnapshot): Firestore document snapshot to be parsed.
+            model (Type[BaseModel]): Pydantic model class to validate and structure the data.
+
+        Returns:
+            BaseModel: An instance of the provided model populated with the document's data.
+
+        Raises:
+            ValueError: If the Firestore document is empty or missing.
+            InternalServerError: If the data fails validation against the model.
+        """
         data = doc.to_dict()
         if not data:
             raise ValueError("[_parser] Missig document data")
@@ -55,34 +71,7 @@ class FirestoreService(BaseDatastore):
             logger.error(f"[_parse_scenarios] Failed to parse Firestore document: {e.errors()}")
             raise InternalServerError(description=ERROR_MESSAGES["invalid_format"])
 
-    def _get_document(self, user_id: str, collection_id: str, document_id: str) -> DocumentReference:
-        """
-        Construct a Firestore document reference for a scenario.
 
-        Args:
-            user_id (str): User ID.
-            collection_id (str): Collection ID.
-            document_id (str): Scenario ID.
-
-        Returns:
-            DocumentReference: Firestore document reference.
-        """
-        return get_document_path(self._firestore_client, user_id, collection_id, document_id)
-
-    def _get_results(self, user_id: str, collection_id: str, project_id: str, category_id: str, batch_id: str):
-        """
-        Return a Firestore document reference for a stored batch test results.
-
-        Args:
-            user_id (str): User ID.
-            collection_id (str): Collection ID.
-            project_id (str): Sub-collection ID.
-            batch_id (str): Batch ID.
-
-        Returns:
-            DocumentReference: Firestore document reference.
-        """
-        return get_results_path(self._firestore_client, user_id, collection_id, project_id, category_id, batch_id)
 
     def list_storage_buckets(self) -> List[str]:
         """
@@ -229,7 +218,7 @@ class FirestoreService(BaseDatastore):
             raise ValueError("Invalid input parameters")
 
         try:
-            doc_ref = self._get_document(user_id=user_id, collection_id=collection_id, document_id=document_id)
+            doc_ref = get_document_path(user_id=user_id, collection_id=collection_id, document_id=document_id)
             doc = doc_ref.get()
 
             if not doc.exists:
@@ -240,11 +229,11 @@ class FirestoreService(BaseDatastore):
 
         except GoogleAPIError as e:
             logger.error(f"[_fetch_document] Firestore API error: {e}")
-            raise ServiceUnavailable(description=ERROR_MESSAGES["gcs_service_unavailable"])
+            raise FirestoreServiceError(ERROR_MESSAGES["gcs_service_unavailable"], cause=e)
 
         except Exception as e:
             logger.error(f"[_fetch_document] Unexpected error while fetching document <ID:{document_id}>: {e}")
-            raise InternalServerError(description=ERROR_MESSAGES["unexpected_error"])
+            raise FirestoreServiceError(ERROR_MESSAGES["unexpected_error"], cause=e)
 
     def fetch_document(
             self,
@@ -289,11 +278,11 @@ class FirestoreService(BaseDatastore):
 
         except GoogleAPIError as e:
             logger.error(f"[fetch_document] Firestore API error: {e}")
-            raise ServiceUnavailable(description=ERROR_MESSAGES["gcs_service_unavailable"])
+            raise FirestoreServiceError(ERROR_MESSAGES["gcs_service_unavailable"], cause=e)
 
         except Exception as e:
             logger.error(f"[fetch_document] Unexpected error: {e}")
-            raise InternalServerError(description=ERROR_MESSAGES["unexpected_error"])
+            raise FirestoreServiceError(ERROR_MESSAGES["unexpected_error"], cause=e)
 
     def fetch_stored_results(self, user_id: str, collection_id: str, project_id: str, category_id: str, batch_id: str):
         """
@@ -315,7 +304,7 @@ class FirestoreService(BaseDatastore):
         """
         try:
             logger.info(f"[fetch_stored_results] Fetching stored results for batch ID: {batch_id}")
-            doc_ref = self._get_results(
+            doc_ref = get_results_path(
                 user_id=user_id,
                 collection_id=collection_id,
                 project_id=project_id,
