@@ -1,6 +1,7 @@
 """
 'evaluators/utils.py': Utility functions for value parsing, normalization, and similarity evaluation.
 """
+
 import re
 import datetime
 from typing import Any, Optional, Dict
@@ -8,18 +9,16 @@ from typing import Any, Optional, Dict
 import Levenshtein
 
 
-FIELD_PARSERS = {
-    "beds": "float",
-    "baths": "float",
-    "budget": "float",
-    "pets": "float",
-    "moveInDate": "date",
-}
+# Removed project-specific hardcoded field parsers
+# and generalized to handle any field type dynamically.
 
+
+
+from rapidfuzz import fuzz  # Trying now with the Rapidfuzz's fuzz module
 
 def levenshtein_f1(a: str, b: str) -> float:
     """
-    Computes an F1-like score using Levenshtein distance to approximate text similarity.
+    Computes an F1-like score using Rapidfuzz's Levenshtein scorer to approximate text similarity.
 
     Args:
         a (str): First string.
@@ -32,11 +31,9 @@ def levenshtein_f1(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
 
-    distance = Levenshtein.distance(a, b)
-    precision = (len(b) - distance) / len(b)
-    recall = (len(a) - distance) / len(a)
-
-    return 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    # Using Rapidfuzz's Levenshtein score
+    score = fuzz.ratio(a, b) / 100  # `fuzz.ratio()` gives a score from 0-100, so divide by 100 for 0-1 range
+    return score
 
 
 def parse_float(val: Any) -> Optional[float]:

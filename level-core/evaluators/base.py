@@ -7,28 +7,34 @@ generated text against expected outcomes using LLMs. Specific implementations
 """
 import re
 import json
+import logging  # logging to use module-level logger
 
 from abc import ABC, abstractmethod
-from logging import Logger
 from typing import Union, Dict
 
 from tenacity import stop_after_attempt, wait_exponential, retry
 
 from evaluators.schemas import EvaluationConfig, EvaluationResult
 
+# Defining module-level logger
+logger = logging.getLogger(__name__)
+
+
+# Removed `logger` from constructor to decouple logging from the base class. 
+# Using module-level logger instead.
 
 class BaseEvaluator(ABC):
     """Abstract base class for implementing text evaluation via LLMs."""
-    def __init__(self, config: EvaluationConfig, logger: Logger):
+
+    def __init__(self, config: EvaluationConfig):
         """
-        Initialize the evaluator with configuration and logger.
+        Initialize the evaluator with configuration.
 
         Args:
             config (EvaluationConfig): Configuration for evaluation behavior.
-            logger (Logger): Logger instance for structured logging.
+
         """
         self.config = config
-        self.logger = logger
 
     @abstractmethod
     def build_prompt(self, generated_text: str, expected_text: str) -> str:
@@ -96,11 +102,17 @@ class BaseEvaluator(ABC):
         Returns:
             EvaluationResult: Structured result of the evaluation.
         """
+        logger.debug("Building prompt for evaluation")  # Log using module-level logger
         prompt = self.build_prompt(generated_text, expected_text)
+
+        logger.debug("Calling LLM with prompt")
         response = await self.call_llm(prompt)
 
         if isinstance(response, dict):
+            logger.debug("LLM response is a valid dict, returning result")
             return EvaluationResult.model_validate(response)
+
+        logger.warning("LLM returned unexpected response format")
         return EvaluationResult(
             match_level=0,
             justification=f"Evaluation failed: {response}"
