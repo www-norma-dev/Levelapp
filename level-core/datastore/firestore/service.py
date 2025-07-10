@@ -12,11 +12,11 @@ from pydantic import ValidationError, BaseModel
 from werkzeug.exceptions import InternalServerError, ServiceUnavailable, HTTPException
 from google.api_core.exceptions import GoogleAPIError, NotFound
 
-from firestore.schemas import ScenarioBatch, ExtractionBundle, DocType
+from .schemas import ScenarioBatch, ExtractionBundle, DocType
 
-from .constants import DEFAULT_SCENARIO_FIELD  
-from .paths import get_document_path, get_results_path, store_extracted_dataa_path, save_batch_results_path  
-from base import BaseDatastore
+from .config import DEFAULT_SCENARIO_FIELD  
+from .paths import get_document_path, get_results_path, store_extracted_data_path, save_batch_results_path  
+from ..base import BaseDatastore
 from .exceptions import FirestoreServiceError
 
 
@@ -270,7 +270,7 @@ class FirestoreService(BaseDatastore):
 
             else:
                 logger.error(f"[fetch_document] Unexpected document type {doc_type}")
-                raise ValidationError(ERROR_MESSAGES["invalid_format"])
+                raise FirestoreServiceError(ERROR_MESSAGES["invalid_format"], cause=E)
 
         except NotFound:
             logger.warning(f"[fetch_document] Document not found: {document_id}")
@@ -349,7 +349,7 @@ class FirestoreService(BaseDatastore):
             "updatedAt": SERVER_TIMESTAMP
         }
 
-        doc_ref = store_extracted_dataa_path(self._firestore_client, user_id, document_id)
+        doc_ref = store_extracted_data_path(self._firestore_client, user_id, document_id)
 
         try:
             doc_ref.set(wrapped_data, merge=True)

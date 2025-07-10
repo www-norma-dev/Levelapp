@@ -2,14 +2,14 @@
 from google.cloud.firestore_v1 import DocumentReference
 from firebase_admin.firestore import Client
 
-from .constants import (
+from .config import (
     USERS_COLLECTION,
     PROJECTS_COLLECTION,
     EXTRACTION_COLLECTION,
     MULTIAGENT_COLLECTION,
 )
 
-def get_documemt_path(client: Client, user_id: str, collection_id: str, document_id: str) -> DocumentReference:
+def get_document_path(client: Client, user_id: str, collection_id: str, document_id: str) -> DocumentReference:
     return client.collection(USERS_COLLECTION).document(user_id).collection(collection_id).document(document_id)
 
 def get_results_path(
@@ -24,7 +24,7 @@ def get_results_path(
         .document(sub_document_id)
     )
 
-def store_extracted_dataa_path(client: Client, user_id: str, document_id: str) -> DocumentReference:
+def store_extracted_data_path(client: Client, user_id: str, document_id: str) -> DocumentReference:
     return client.collection(USERS_COLLECTION).document(user_id).collection(EXTRACTION_COLLECTION).document(document_id)
 
 def save_batch_results_path(client: Client, user_id: str, project_id: str, batch_id: str) -> DocumentReference:
