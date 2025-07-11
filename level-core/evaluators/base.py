@@ -19,6 +19,8 @@ from evaluators.schemas import EvaluationConfig, EvaluationResult
 # Defining module-level logger
 logger = logging.getLogger(__name__)
 
+from pydantic import ValidationError
+# Pydantic for structured data validation 
 
 # Removed `logger` from constructor to decouple logging from the base class. 
 # Using module-level logger instead.
@@ -105,12 +107,16 @@ class BaseEvaluator(ABC):
         logger.debug("Building prompt for evaluation")  # Log using module-level logger
         prompt = self.build_prompt(generated_text, expected_text)
 
-        logger.debug("Calling LLM with prompt")
+
         response = await self.call_llm(prompt)
 
         if isinstance(response, dict):
-            logger.debug("LLM response is a valid dict, returning result")
-            return EvaluationResult.model_validate(response)
+            try:
+                return EvaluationResult.model_validate(response)
+            except ValidationError as e:
+                self.logger.error(f"Pydantic validation failed: {e}")
+                return None # Return None if validation fails
+
 
         logger.warning("LLM returned unexpected response format")
         return EvaluationResult(
