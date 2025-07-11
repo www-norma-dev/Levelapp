@@ -16,17 +16,18 @@ from .utils import (
     calculate_handoff_stats,
 )
 from .event_collector import add_event
+from level_core.datastore.firestore.schemas import ScenarioBatch
 
 class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
     """
-    def __init__(self, batch: Any, evaluation_fn: Optional[Callable] = None, persistence_fn: Optional[Callable] = None):
+    def __init__(self, batch: ScenarioBatch, evaluation_fn: Optional[Callable] = None, persistence_fn: Optional[Callable] = None):
         """
         Initialize the ConversationSimulator.
 
         Args:
-            batch (Any): The batch of scenarios to simulate (user supplies structure).
+            batch (ScenarioBatch): The batch of scenarios to simulate (user supplies structure).
             evaluation_fn (Callable): Function to evaluate interactions (user supplies).
             persistence_fn (Callable): Function to persist results (user supplies).
         """
