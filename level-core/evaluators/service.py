@@ -1,19 +1,19 @@
 """
 'evaluators/service.py': EvaluationService handles evaluator selection and execution for different providers.
 """
+
 from logging import Logger
-from typing import Literal, Dict
+from typing import Dict, Optional, Type
 
 from pydantic import ValidationError
 
 from .base import BaseEvaluator
-from .ionos import IonosEvaluator
-from .openai import OpenAIEvaluator
 from .schemas import EvaluationConfig, EvaluationResult
 
 
 class EvaluationService:
     """Service layer to manage evaluator configurations and orchestrate evaluations."""
+
     def __init__(self, logger: Logger):
         """
         Args:
@@ -22,22 +22,39 @@ class EvaluationService:
         self.logger = logger
         self.configs: Dict[str, EvaluationConfig] = {}
 
-    def set_config(self, provider: Literal["ionos", "openai"], config: EvaluationConfig):
+        # New attribute to hold evaluator classes
+        # This allows dynamic registration of evaluators by their provider name
+        
+        self.evaluator_classes: Dict[str, Type[BaseEvaluator]] = {}
+
+    def register_evaluator(self, provider: str, evaluator_cls: Type[BaseEvaluator]):
+        """
+        Enregistre un évaluateur dynamique par son nom (provider).
+
+        Args:
+            provider (str): Nom de l'évaluateur.
+            evaluator_cls (Type[BaseEvaluator]): Classe de l'évaluateur.
+        """
+        self.evaluator_classes[provider] = evaluator_cls
+        if self.logger:
+            self.logger.info(f"Evaluator '{provider}' registered.")
+
+    def set_config(self, provider: str, config: EvaluationConfig):
         """
         Register an evaluation configuration for a specific provider.
 
         Args:
-            provider (Literal): The evaluation provider ("ionos" or "openai").
+            provider (str): The evaluation provider identifier.
             config (EvaluationConfig): The config object for that provider.
         """
         self.configs[provider] = config
 
-    def _select_evaluator(self, provider: Literal["ionos", "openai"]) -> BaseEvaluator:
+    def _select_evaluator(self, provider: str) -> BaseEvaluator:
         """
         Factory method to return the correct evaluator instance.
 
         Args:
-            provider (Literal): The name of the LLM provider.
+            provider (str): The name of the evaluator provider.
 
         Returns:
             BaseEvaluator: Instantiated evaluator object.
@@ -46,30 +63,31 @@ class EvaluationService:
             KeyError: If the provider or config is not found.
             ValueError: If the config is invalid.
         """
-        evaluator_map = {
-            "ionos": IonosEvaluator,
-            "openai": OpenAIEvaluator,
-        }
+        if provider not in self.evaluator_classes:
+            raise KeyError(f"Evaluator '{provider}' is not registered.")
+
+        if provider not in self.configs:
+            raise KeyError(f"No configuration found for evaluator '{provider}'.")
+
+        evaluator_cls = self.evaluator_classes[provider]
+        config = self.configs[provider]
 
         try:
-            config = self.configs[provider]
-            return evaluator_map[provider](config, self.logger)
-        except KeyError:
-            raise KeyError(f"Invalid provider: {provider}. Valid providers: {list(self.configs.keys())}")
+            return evaluator_cls(config, self.logger)
         except ValidationError as e:
             raise ValueError(f"Invalid configuration: {e.errors()}")
 
     async def evaluate_response(
-            self,
-            provider: Literal["ionos", "openai"],
-            output_text: str,
-            reference_text: str
+        self,
+        provider: str,  #  accept generic str
+        output_text: str,
+        reference_text: str
     ) -> EvaluationResult:
         """
         Perform evaluation using the configured provider.
 
         Args:
-            provider (Literal): Evaluation provider to use.
+            provider (str): Evaluation provider to use.
             output_text (str): Generated output from the agent.
             reference_text (str): Expected output to compare against.
 
