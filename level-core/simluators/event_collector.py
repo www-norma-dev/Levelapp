@@ -22,3 +22,4 @@ def add_event(level: str, message: str, context: Optional[Dict[str, Any]] = None
         "message": message,
         "context": context or {}
     }) 
+    
