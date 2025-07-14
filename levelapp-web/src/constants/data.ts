@@ -29,6 +29,19 @@ export const navItems: NavItem[] = [
     ],
   },
   {
+    title: "API Config",
+    url: "/dashboard/api-config",
+    icon: "webhook",
+    isActive: true,
+    items: [
+      {
+        title: "Manage api's",
+        url: "/dashboard/api-config",
+        icon: "product",
+      },
+    ],
+  },
+  {
     title: "Datasets",
     url: "/dashboard/datasets",
     icon: "database",

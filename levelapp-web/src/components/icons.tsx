@@ -35,6 +35,7 @@ import {
   Database,
   Bot,
   Terminal,
+  Webhook,
 } from "lucide-react";
 
 export type Icon = LucideIcon;
@@ -72,6 +73,7 @@ export const Icons = {
   database: Database,
   bot: Bot,
   terminal: Terminal,
+  webhook: Webhook,
   gitHub: ({ ...props }: LucideProps) => (
     <svg
       aria-hidden="true"
