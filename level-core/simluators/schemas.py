@@ -17,7 +17,7 @@ class InteractionDetails(BaseModel):
     reply: Optional[str] = "No response"
     extracted_metadata: Optional[Dict[str, Any]] = {}
     handoff_details: Optional[Dict[str, Any]] = {}
-    interaction_type: Optional[str] = ""
+    interaction_type: Optional[InteractionType] = InteractionType.OPENING
 
 class InteractionEvaluationResult(BaseModel):
     """Model representing the evaluation result of an interaction."""
@@ -29,11 +29,11 @@ class Interaction(BaseModel):
     """Represents a single interaction within a conversation."""
     id: UUID = Field(default_factory=uuid4, description="Interaction identifier")
     user_message: str = Field(..., description="The user's message")
-    agent_message: str = Field(..., description="The agent's response message")
-    reference_message: str = Field(..., description="The expected reference message")
+    agent_reply: str = Field(..., description="The agent's response message")
+    reference_reply: str = Field(..., description="The expected reference message")
     interaction_type: InteractionType = Field(..., description="Type of interaction")
-    reference_metadata: Dict[str, Any] = Field(default_factory=dict, description="Expected metadata for this interaction")
-    generated_metadata: Dict[str, Any] = Field(default_factory=dict, description="Generated metadata from the agent's response")
+    reference_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Expected metadata for this interaction")
+    generated_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Generated metadata from the agent's response")
 
 class BasicConversation(BaseModel):
     """Represents a basic conversation with multiple interactions."""
