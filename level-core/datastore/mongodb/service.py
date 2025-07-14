@@ -1,0 +1,27 @@
+from ..base import BaseDatastore
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class MongoDBService(BaseDatastore):
+    """
+    Example MongoDB backend implementation (placeholder).
+    """
+
+    def __init__(self, client):
+        """
+        Args:
+            client: A MongoDB client instance (e.g., pymongo.MongoClient)
+        """
+        self.client = client
+
+    def fetch_document(self, user_id: str, collection_id: str, document_id: str, doc_type: str) -> BaseModel:
+        """
+        Fetch a document from MongoDB (not implemented yet).
+        """
+        raise NotImplementedError("MongoDB backend is not implemented yet.")
+
+    def fetch_stored_results(self, user_id: str, collection_id: str, project_id: str, category_id: str, batch_id: str) -> Dict[str, Any]:
+        raise NotImplementedError("MongoDB backend is not implemented yet.")
+
+    def save_batch_test_results(self, user_id: str, project_id: str, batch_id: str, data: Dict[str, Any]) -> None:
+        raise NotImplementedError("MongoDB backend is not implemented yet.")
