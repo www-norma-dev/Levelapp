@@ -4,6 +4,13 @@ levelapp_core_simulators/schemas.py: Generic Pydantic models for simulator data 
 from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
+from enum import Enum
+
+class InteractionType(str, Enum):
+    """Enum representing the type of interaction."""
+    OPENING = "opening"
+    DEVELOPMENT = "development"
+    CLOSURE = "closure"
 
 class InteractionDetails(BaseModel):
     """Model representing details of a simulated interaction."""
@@ -24,7 +31,7 @@ class Interaction(BaseModel):
     user_message: str = Field(..., description="The user's message")
     agent_message: str = Field(..., description="The agent's response message")
     reference_message: str = Field(..., description="The expected reference message")
-    interaction_type: str = Field(..., description="Type of interaction")
+    interaction_type: InteractionType = Field(..., description="Type of interaction")
     reference_metadata: Dict[str, Any] = Field(default_factory=dict, description="Expected metadata for this interaction")
     generated_metadata: Dict[str, Any] = Field(default_factory=dict, description="Generated metadata from the agent's response")
 
