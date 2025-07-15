@@ -20,15 +20,20 @@ from evaluators.schemas import EvaluationConfig, EvaluationResult
 
 
 class OpenAIEvaluator(BaseEvaluator):
+    from evaluators.base import BaseEvaluator
+
+        
+
     """Evaluator that uses OpenAI's GPT models via LangChain for structured evaluation."""
 
     def __init__(self, config: EvaluationConfig, logger: Logger):
+        self.logger = logger 
         """
         Args:
             config (EvaluationConfig): Configuration for the LLM and API.
             logger (Logger): Logger for error/debug reporting.
         """
-        super().__init__(config, logger)
+        super().__init__(config)
         self.SystemMessage = SystemMessage
         self.HumanMessage = HumanMessage
         self.ChatPromptTemplate = ChatPromptTemplate
