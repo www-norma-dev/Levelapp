@@ -1,5 +1,6 @@
 from .firestore.service import FirestoreService
 from .mongodb.service import MongoDBService
+from .fss.service import FileSystemService
 
 def get_datastore(backend: str = "firestore", **kwargs):
     """
@@ -20,5 +21,8 @@ def get_datastore(backend: str = "firestore", **kwargs):
 
     elif backend == "mongodb":
         return MongoDBService(**kwargs)
+    elif backend == "fss":
+        return FileSystemService(**kwargs)
+
 
     raise ValueError(f"Unsupported backend: {backend}")
