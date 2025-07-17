@@ -1,0 +1,49 @@
+{
+    "id": "b7e6a1c2-3e4d-4f1a-9b2a-1c2d3e4f5a6b",
+    "interactions": [
+      {
+        "id": "a1b2c3d4-e5f6-7a8b-9c0d-e1f2a3b4c5d6",
+        "user_message": "Hello, I need help with my account.",
+        "agent_reply": "Sure, I can help you with your account. What seems to be the issue?",
+        "reference_reply": "How can I assist you with your account?",
+        "interaction_type": "opening",
+        "reference_metadata": {
+          "intent": "account_help"
+        },
+        "generated_metadata": {
+          "intent": "account_help"
+        }
+      },
+      {
+        "id": "d6c5b4a3-2f1e-0d9c-8b7a-6f5e4d3c2b1a",
+        "user_message": "I forgot my password.",
+        "agent_reply": "No problem, I can help you reset your password.",
+        "reference_reply": "Let me assist you in resetting your password.",
+        "interaction_type": "development",
+        "reference_metadata": {
+          "intent": "password_reset"
+        },
+        "generated_metadata": {
+          "intent": "password_reset"
+        }
+      },
+      {
+        "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "user_message": "Thank you!",
+        "agent_reply": "You're welcome! If you need anything else, just ask.",
+        "reference_reply": "Glad I could help. Have a great day!",
+        "interaction_type": "closure",
+        "reference_metadata": {
+          "intent": "gratitude"
+        },
+        "generated_metadata": {
+          "intent": "gratitude"
+        }
+      }
+    ],
+    "description": "A sample conversation for testing.",
+    "details": {
+      "scenario": "account support",
+      "language": "en"
+    }
+  }
