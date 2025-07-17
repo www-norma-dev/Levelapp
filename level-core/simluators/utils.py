@@ -2,15 +2,14 @@
 levelapp_core_simulators/utils.py: Generic utility functions for simulation and evaluation.
 """
 import json
-from typing import Dict, Any, Optional, List, Callable, Union
+from typing import Dict, Any, Optional, List, Union
 import httpx
 import arrow
 from pydantic import ValidationError
 from collections import defaultdict
-from .schemas import InteractionDetails, RelativeDateOption
+from .schemas import InteractionDetails
 from .event_collector import add_event
 
-# logger = logging.getLogger("simulator-utils")  # Remove this line
 
 
 def extract_interaction_details(response_text: str) -> InteractionDetails:
@@ -101,22 +100,6 @@ def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional
         add_event("ERROR", msg, {"exc_info": True})
         return default_date_value
 
-
-# def calculate_average_scores(scores: Dict[str, List[float]]) -> Dict[str, float]:
-#     """
-#     Calculates the average scores for a dictionary of score lists.
-
-#     Args:
-#         scores (Dict[str, List[float]]): A dictionary mapping keys to lists of scores.
-
-#     Returns:
-#         Dict[str, float]: A dictionary mapping keys to their average score.
-#     """
-#     def average(values: List[float]) -> float:
-#         return round(sum(values) / len(values), 3) if values else 0.0
-#     return {key: average(values) for key, values in scores.items()}
-
-
 def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
     """
     Computes statistics for handoff pass check values.
@@ -131,27 +114,6 @@ def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
     clean = [v for v in raw if isinstance(v, int) and v in (0, 1)]
     avg = round(sum(clean) / len(clean), 3) if clean else 0.0
     return {"values": raw, "average": avg}
-
-
-# def calculate_average_time_duration(scenarios: List[Dict[str, Any]]) -> float:
-#     """
-#     Calculates the average execution time across all attempts in all scenarios.
-
-#     Args:
-#         scenarios (List[Dict[str, Any]]): List of scenario dictionaries, each containing attempts.
-
-#     Returns:
-#         float: The average execution time in seconds, or 0.0 if no durations are found.
-#     """
-#     durations = []
-#     for scenario in scenarios:
-#         for attempt in scenario.get("attempts", []):
-#             duration = attempt.get("totalDurationSeconds")
-#             if isinstance(duration, (int, float)):
-#                 durations.append(duration)
-#     if not durations:
-#         return 0.0
-#     return round(sum(durations) / len(durations), 2)
 
 def calculate_average(data: Union[Dict[str, List[float]], List[Dict[str, Any]]]) -> Union[Dict[str, float], float]:
     """
@@ -226,5 +188,4 @@ def summarize_justifications(justifications: List[Dict[str, str]], max_bullets: 
         f"{justification} (Scenarios: {', '.join(scenarios)})"
         for justification, scenarios in grouped.items()
     ]
-    # Return up to max_bullets merged justifications
     return merged_justifications[:max_bullets] 
