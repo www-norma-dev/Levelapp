@@ -73,7 +73,12 @@ class EvaluationService:
         config = self.configs[provider]
 
         try:
-            return evaluator_cls(config, self.logger)
+            # Check if this is OpenAIEvaluator which accepts an optional logger parameter
+            if provider == "openai":
+                return evaluator_cls(config, self.logger)
+            else:
+                # For all other evaluators (like IonosEvaluator), only pass config
+                return evaluator_cls(config)
         except ValidationError as e:
             raise ValueError(f"Invalid configuration: {e.errors()}")
 

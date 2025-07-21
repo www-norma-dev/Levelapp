@@ -14,7 +14,7 @@ from typing import Union, Dict
 
 from tenacity import stop_after_attempt, wait_exponential, retry
 
-from evaluators.schemas import EvaluationConfig, EvaluationResult
+from .schemas import EvaluationConfig, EvaluationResult
 
 # Defining module-level logger
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ class BaseEvaluator(ABC):
             try:
                 return EvaluationResult.model_validate(response)
             except ValidationError as e:
-                self.logger.error(f"Pydantic validation failed: {e}")
+                logger.error(f"Pydantic validation failed: {e}")
                 return None # Return None if validation fails
 
 

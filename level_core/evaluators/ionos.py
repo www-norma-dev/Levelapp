@@ -13,7 +13,7 @@ from typing import Union, Dict
 # NEW: Tenacity imports for retry logic
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from evaluators.base import BaseEvaluator
+from .base import BaseEvaluator
 
 logger = logging.getLogger(__name__)   # fallback logger 
 

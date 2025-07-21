@@ -15,20 +15,21 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from evaluators.base import BaseEvaluator
-from evaluators.schemas import EvaluationConfig, EvaluationResult
+from .base import BaseEvaluator
+from .schemas import EvaluationConfig, EvaluationResult
 
 
 class OpenAIEvaluator(BaseEvaluator):
     """Evaluator that uses OpenAI's GPT models via LangChain for structured evaluation."""
 
-    def __init__(self, config: EvaluationConfig, logger: Logger):
+    def __init__(self, config: EvaluationConfig, logger: Logger = None):
         """
         Args:
             config (EvaluationConfig): Configuration for the LLM and API.
             logger (Logger): Logger for error/debug reporting.
         """
-        super().__init__(config, logger)
+        super().__init__(config)
+        self.logger = logger
         self.SystemMessage = SystemMessage
         self.HumanMessage = HumanMessage
         self.ChatPromptTemplate = ChatPromptTemplate
@@ -110,5 +111,6 @@ class OpenAIEvaluator(BaseEvaluator):
                 return response.model_dump()
 
         except Exception as e:
-            self.logger.error(f"[call_llm] OpenAI API request failed: {e}", exc_info=True)
+            if self.logger:
+                self.logger.error(f"[call_llm] OpenAI API request failed: {e}", exc_info=True)
             return {"error": "API request failed", "details": str(e)}
