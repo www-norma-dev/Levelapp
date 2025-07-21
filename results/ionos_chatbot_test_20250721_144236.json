@@ -1,0 +1,112 @@
+{
+  "scenario_metadata": {
+    "scenario_id": "scenario_20250721_144236",
+    "timestamp": "2025-07-21T14:42:36.866827",
+    "rag_source_url": "https://www.ionos.com",
+    "total_interactions": 5,
+    "average_score": 2.6,
+    "success_rate": 100.0,
+    "evaluator_type": "local",
+    "model_used": "meta-llama/Llama-3.3-70B-Instruct"
+  },
+  "scenario_summary": {
+    "score_distribution": {
+      "excellent_responses": 3,
+      "good_responses": 2,
+      "fair_responses": 0,
+      "poor_responses": 0
+    },
+    "overall_performance": {
+      "total_score": 13.0,
+      "max_possible_score": 15,
+      "success_rate_percentage": 100.0
+    }
+  },
+  "interactions": [
+    {
+      "interaction_id": "interaction_1",
+      "turn_number": 1,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "Hello, how are you?",
+      "chatbot_reply": "Hello! I'm doing well, thanks for asking. I'm here to help you with any questions or information you need about the IONOS website. How can I assist you today? Do you have a specific question about their services, such as hosting, cloud, or email, or perhaps something else?",
+      "reference": "Hello, how are you?",
+      "evaluation_score": 3,
+      "judgement": "The chatbot response is excellent because it directly addresses the user's greeting, expresses a positive sentiment, and clearly states its purpose and availability to assist with questions about the IONOS website, making it highly relevant, helpful, clear, appropriate, and accurate.",
+      "status": "success",
+      "metadata": {
+        "model_used": "meta-llama/Llama-3.3-70B-Instruct",
+        "evaluator": "LocalEvaluator",
+        "api_url": "http://127.0.0.1:8000"
+      },
+      "evaluation_timestamp": "2025-07-21T14:42:36.866827"
+    },
+    {
+      "interaction_id": "interaction_2",
+      "turn_number": 2,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "What's the weather like?",
+      "chatbot_reply": "The information provided is about the IONOS website, and it doesn't mention the weather. IONOS appears to be a web hosting and cloud services company, and the text is about their products and services. If you're looking for weather information, I'd be happy to help you find a way to get that, but it's not related to the IONOS website. Would you like to know more about IONOS or is there something else I can help you with?",
+      "reference": "What's the weather like?",
+      "evaluation_score": 2,
+      "judgement": "The chatbot response is good because it acknowledges the user's prompt, explains why it can't provide a direct answer, and offers alternative assistance. However, it doesn't provide any actual help with the user's question about the weather, making it somewhat unhelpful. The response is clear, appropriate, and accurate in the context of the IONOS website, but has minor issues due to its inability to provide a direct answer to the user's question.",
+      "status": "success",
+      "metadata": {
+        "model_used": "meta-llama/Llama-3.3-70B-Instruct",
+        "evaluator": "LocalEvaluator",
+        "api_url": "http://127.0.0.1:8000"
+      },
+      "evaluation_timestamp": "2025-07-21T14:42:36.866827"
+    },
+    {
+      "interaction_id": "interaction_3",
+      "turn_number": 3,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "Tell me a joke",
+      "chatbot_reply": "Here's one:\n\nWhy did the server go to therapy?\n\nBecause it had a little \"glitch\" to work through!\n\nI hope that one \"connected\" with you and made you smile! (Sorry, I couldn't resist the tech puns!)",
+      "reference": "Tell me a joke",
+      "evaluation_score": 3,
+      "judgement": "The chatbot response is excellent because it directly addresses the user's request for a joke, provides a relevant and tech-themed joke, and adds a playful touch with the puns. The response is clear, easy to understand, and appropriate for a lighthearted conversation. The tone is also friendly and engaging, making it a highly relevant, helpful, and accurate response to the user's prompt.",
+      "status": "success",
+      "metadata": {
+        "model_used": "meta-llama/Llama-3.3-70B-Instruct",
+        "evaluator": "LocalEvaluator",
+        "api_url": "http://127.0.0.1:8000"
+      },
+      "evaluation_timestamp": "2025-07-21T14:42:36.866827"
+    },
+    {
+      "interaction_id": "interaction_4",
+      "turn_number": 4,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "What's 2+2?",
+      "chatbot_reply": "Easy one! The answer is 4! Would you like to know more about IONOS or their services, such as web hosting, cloud storage, or email solutions? I'm here to help with any questions you have about their products.",
+      "reference": "What's 2+2?",
+      "evaluation_score": 2,
+      "judgement": "The chatbot response is good because it correctly answers the user's math question, providing a clear and accurate response. However, the follow-up sentence attempting to steer the conversation towards IONOS services feels somewhat forced and unrelated to the user's prompt, making it slightly less relevant and helpful. The tone is friendly and the response is easy to understand, but the transition to promoting IONOS services could be smoother.",
+      "status": "success",
+      "metadata": {
+        "model_used": "meta-llama/Llama-3.3-70B-Instruct",
+        "evaluator": "LocalEvaluator",
+        "api_url": "http://127.0.0.1:8000"
+      },
+      "evaluation_timestamp": "2025-07-21T14:42:36.866827"
+    },
+    {
+      "interaction_id": "interaction_5",
+      "turn_number": 5,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "Goodbye!",
+      "chatbot_reply": "It was nice chatting with you. If you have any questions about IONOS or their services in the future, feel free to come back and ask. Otherwise, have a great day and goodbye!",
+      "reference": "Goodbye!",
+      "evaluation_score": 3,
+      "judgement": "The chatbot response is excellent because it directly addresses the user's farewell message, responds with a friendly and polite tone, and provides a clear invitation to return if the user has future questions. The response is highly relevant, helpful, clear, and appropriate, making it a perfect conclusion to the conversation. The chatbot also shows a good understanding of social norms by wishing the user a great day, demonstrating a high level of conversational competence.",
+      "status": "success",
+      "metadata": {
+        "model_used": "meta-llama/Llama-3.3-70B-Instruct",
+        "evaluator": "LocalEvaluator",
+        "api_url": "http://127.0.0.1:8000"
+      },
+      "evaluation_timestamp": "2025-07-21T14:42:36.866827"
+    }
+  ]
+}

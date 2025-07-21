@@ -1,0 +1,53 @@
+{
+  "scenario_metadata": {
+    "scenario_id": "scenario_20250721_155815",
+    "timestamp": "2025-07-21T15:58:15.269677",
+    "rag_source_url": "https://www.ionos.com",
+    "total_interactions": 2,
+    "average_score": 2.5,
+    "success_rate": 100.0,
+    "evaluator_type": "local",
+    "model_used": "test-model"
+  },
+  "scenario_summary": {
+    "score_distribution": {
+      "excellent_responses": 1,
+      "good_responses": 1,
+      "fair_responses": 0,
+      "poor_responses": 0
+    },
+    "overall_performance": {
+      "total_score": 5.0,
+      "max_possible_score": 6,
+      "success_rate_percentage": 100.0
+    }
+  },
+  "interactions": [
+    {
+      "interaction_id": "interaction_1",
+      "turn_number": 1,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "Hello",
+      "chatbot_reply": "Hi there!",
+      "reference": "Hello",
+      "evaluation_score": 3,
+      "judgement": "Excellent greeting response",
+      "status": "success",
+      "metadata": {},
+      "evaluation_timestamp": "2025-07-21T15:58:15.269677"
+    },
+    {
+      "interaction_id": "interaction_2",
+      "turn_number": 2,
+      "rag_source_url": "https://www.ionos.com",
+      "user_prompt": "How are you?",
+      "chatbot_reply": "I'm doing well, thank you!",
+      "reference": "How are you?",
+      "evaluation_score": 2,
+      "judgement": "Good response with minor formality",
+      "status": "success",
+      "metadata": {},
+      "evaluation_timestamp": "2025-07-21T15:58:15.269677"
+    }
+  ]
+}
