@@ -308,3 +308,68 @@ class ConversationSimulator:
             }
             results.append(result)
         return results
+    async def evaluate_interaction(
+            self,
+            extracted_vla_reply: str,
+            reference_vla_reply: str,
+            extracted_metadata: Dict[str, Any],
+            reference_metadata: Dict[str, Any],
+            scenario_title: str
+    ) -> InteractionEvaluationResult:
+        """
+        Evaluate an interaction using OpenAI and Ionos evaluation services.
+
+        Args:
+            extracted_vla_reply (str): The extracted VLA reply.
+            reference_vla_reply (str): The reference VLA reply.
+            extracted_metadata (Dict[str, Any]): The extracted metadata.
+            reference_metadata (Dict[str, Any]): The reference metadata.
+
+        Returns:
+            InteractionEvaluationResult: The evaluation results.
+        """
+        openai_eval_task = self.evaluation_service.evaluate_response(
+            provider="openai",
+            output_text=extracted_vla_reply,
+            reference_text=reference_vla_reply,
+        )
+
+        ionos_eval_task = self.evaluation_service.evaluate_response(
+            provider="ionos",
+            output_text=extracted_vla_reply,
+            reference_text=reference_vla_reply,
+        )
+
+        openai_reply_evaluation, ionos_reply_evaluation = await asyncio.gather(openai_eval_task, ionos_eval_task)
+
+        # extracted_metadata_evaluation = evaluate_metadata(
+        #     expected=reference_metadata,
+        #     actual=extracted_metadata,
+        # )
+
+        return InteractionEvaluationResult(
+            openaiReplyEvaluation=openai_reply_evaluation,
+            ionosReplyEvaluation=ionos_reply_evaluation,
+            # extractedMetadataEvaluation=extracted_metadata_evaluation,
+            scenarioTitle=scenario_title
+        )
+
+    def store_evaluation_results(self, results: InteractionEvaluationResult) -> None:
+        """
+        Store the evaluation results in the evaluation summary.
+
+        Args:
+            results (InteractionEvaluationResult): The evaluation results to store.
+        """
+        self.evaluation_results["openaiJustificationSummary"].append({
+            "scenario": results.scenarioTitle,
+            "justification": results.openaiReplyEvaluation.justification
+        })
+        self.evaluation_results["ionosJustificationSummary"].append({
+            "scenario": results.scenarioTitle,
+            "justification": results.ionosReplyEvaluation.justification
+        })
+        
+        self.collected_scores["openai"].append(results.openaiReplyEvaluation.match_level)
+        self.collected_scores["ionos"].append(results.ionosReplyEvaluation.match_level)
+        self.collected_scores["metadata"].append(results.extractedMetadataEvaluation)
