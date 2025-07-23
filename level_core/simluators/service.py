@@ -147,14 +147,14 @@ class ConversationSimulator:
             #     conversation_id=conversation_id
             # )
             # attempt_handoff_checks.append(initial_interaction_results.get("handoffPassCheck", 0))
-            inbound_interactions_results = await self.simulate__interactions(
+            interactions_results = await self.simulate__interactions(
                 scenario=scenario,
                 conversation_id=conversation_id
             )
-            for r in inbound_interactions_results:
+            # for r in inbound_interactions_results:
                 # if "handoffPassCheck" in r:
                 #     attempt_handoff_checks.append(r["handoffPassCheck"])
-                pass # Commented out handoff logic
+                # pass 
             single_attempt_scores = calculate_average(self.collected_scores)
             for key in all_attempts_scores:
                 all_attempts_scores[key].append(single_attempt_scores.get(key, 0.0))
@@ -165,11 +165,9 @@ class ConversationSimulator:
             attempt_results.append({
                 "attempt_id": attempt + 1,
                 "conversation_id": conversation_id,
-                # "totalDuration_seconds": elapsed_time,
-                "initial_interaction": {}, # Commented out handoff logic
-                "inbound_interactions": inbound_interactions_results,
+                "interactions": interactions_results,  # renamed from inbound_interactions
                 "average_scores": single_attempt_scores,
-                "execution_time": f"{time.time() - start_time:.2f}", # Commented out handoff logic
+                "execution_time": f"{time.time() - start_time:.2f}",
             })
         average_scores = calculate_average(all_attempts_scores)
         return {
@@ -277,10 +275,11 @@ class ConversationSimulator:
                 })
                 result = {
                     "user_message": user_message,
-                    "reply": "Request failed",
-                    "expected_reply": getattr(interaction, 'expected_reply', None),
-                    "extracted_metadata": {},
-                    "expected_metadata": {},
+                    "agent_reply": "Request failed",
+                    "reference_reply": getattr(interaction, 'reference_reply', None),
+                    "interaction_type": getattr(interaction, 'interaction_type', None),
+                    "reference_metadata": getattr(interaction, 'reference_metadata', {}),
+                    "generated_metadata": {},
                     "evaluation_results": {},
                 }
                 results.append(result)
@@ -290,9 +289,9 @@ class ConversationSimulator:
             if self.evaluation_fn:
                 evaluation_results = self.evaluation_fn(
                     extracted_reply=interaction_details.reply,
-                    reference_reply=getattr(interaction, 'expected_reply', None),
-                    extracted_metadata=interaction_details.extracted_metadata,
-                    reference_metadata=getattr(interaction, 'expected_metadata', {}),
+                    reference_reply=getattr(interaction, 'reference_reply', None),
+                    generated_metadata=interaction_details.extracted_metadata,
+                    reference_metadata=getattr(interaction, 'reference_metadata', {}),
                     scenario_id=getattr(scenario, 'scenario_id', 'unknown')
                 )
             # actual_handoff = interaction_details.handoff_details is not None
@@ -300,10 +299,11 @@ class ConversationSimulator:
             # handoff_pass_check = 1 if expected_handoff == actual_handoff else 0
             result = {
                 "user_message": user_message,
-                "reply": interaction_details.reply,
-                "expected_reply": getattr(interaction, 'expected_reply', None),
-                "extracted_metadata": interaction_details.extracted_metadata,
-                "expected_metadata": getattr(interaction, 'expected_metadata', {}),
+                "agent_reply": interaction_details.reply,
+                "reference_reply": getattr(interaction, 'reference_reply', None),
+                "interaction_type": interaction_details.interaction_type,
+                "reference_metadata": getattr(interaction, 'reference_metadata', {}),
+                "generated_metadata": interaction_details.extracted_metadata,
                 "evaluation_results": evaluation_results,
             }
             results.append(result)
