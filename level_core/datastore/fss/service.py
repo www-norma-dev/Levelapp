@@ -1,8 +1,7 @@
 import json
-import os
 from typing import Dict, Any
 from pydantic import BaseModel
-
+from pathlib import Path
 from ..base import BaseDatastore
 from ..firestore.schemas import ScenarioBatch, ExtractionBundle, DocType
 
@@ -21,8 +20,8 @@ class FileSystemService(BaseDatastore):
         Args:
             base_path (str): Directory where all documents and results are stored.
         """
-        self.base_path = base_path
-        os.makedirs(self.base_path, exist_ok=True) 
+        self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True) 
 
     def _get_path(self, *parts) -> str:
         """
@@ -34,7 +33,7 @@ class FileSystemService(BaseDatastore):
         Returns:
             str: The combined path.
         """
-        return os.path.join(self.base_path, *parts)
+        return self.base_path.joinpath(*parts)
 
     def fetch_document(
         self,
@@ -98,7 +97,7 @@ class FileSystemService(BaseDatastore):
         path = self._get_path(user_id, project_id, category_id, f"{batch_id}_results.json")
 
         try:
-            with open(path, "r") as f:
+            with path.open("r") as f:
                 return json.load(f)
         except FileNotFoundError as e:
             raise FileNotFoundError(f"[fetch_stored_results] File not found: {path}") from e
@@ -125,6 +124,6 @@ class FileSystemService(BaseDatastore):
             None
         """
         path = self._get_path(user_id, project_id, "results", f"{batch_id}_results.json")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
+        path.parent.mkdir(parents=True, exist_ok=True) 
+        with path.open("w") as f:
             json.dump(data, f, indent=2)  
