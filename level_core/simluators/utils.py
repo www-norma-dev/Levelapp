@@ -101,15 +101,15 @@ def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional
         return default_date_value
 
 
-def calculate_average(data: Union[Dict[str, List[float]], List[Dict[str, Any]]]) -> Union[Dict[str, float], float]:
+def calculate_average(data: Union[Dict[str, List[float]], List[Dict[str, Any]]]) -> Dict[str, float]:
     """
-    Calculates averages depending on input type.
+    Calculates averages depending on input type, always returning a dictionary.
 
     Args:
         data (Union[Dict[str, List[float]], List[Dict[str, Any]]]): Either a dictionary of lists or a list of scenario dicts.
 
     Returns:
-        Union[Dict[str, float], float]: Averaged result(s) - dict of averages per key or single average duration.
+        Dict[str, float]: Averaged result(s) as a dictionary. For scenario lists, returns {"average_duration": value}.
     """
     if isinstance(data, dict):  # case for score dictionary
         return {
@@ -123,7 +123,7 @@ def calculate_average(data: Union[Dict[str, List[float]], List[Dict[str, Any]]])
             for attempt in scenario.get("attempts", [])
             if isinstance(attempt.get("totalDurationSeconds"), (int, float))
         ]
-        return round(sum(durations) / len(durations), 2) if durations else 0.0
+        return {"average_duration": round(sum(durations) / len(durations), 2) if durations else 0.0}
     else:
         raise TypeError("Unsupported data type for average calculation.")
     
