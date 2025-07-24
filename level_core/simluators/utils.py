@@ -100,20 +100,6 @@ def parse_date_value(raw_date_value: Optional[str], default_date_value: Optional
         add_event("ERROR", msg, {"exc_info": True})
         return default_date_value
 
-def calculate_handoff_stats(values: List[Any]) -> Dict[str, Any]:
-    """
-    Computes statistics for handoff pass check values.
-
-    Args:
-        values (List[Any]): List of handoff pass check values (0, 1, or None).
-
-    Returns:
-        Dict[str, Any]: Dictionary with the raw values and the average over valid entries.
-    """
-    raw = list(values)
-    clean = [v for v in raw if isinstance(v, int) and v in (0, 1)]
-    avg = round(sum(clean) / len(clean), 3) if clean else 0.0
-    return {"values": raw, "average": avg}
 
 def calculate_average(data: Union[Dict[str, List[float]], List[Dict[str, Any]]]) -> Union[Dict[str, float], float]:
     """
