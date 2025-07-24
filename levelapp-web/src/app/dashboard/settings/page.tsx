@@ -15,6 +15,21 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Copy } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { MoreVertical } from "lucide-react";
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -24,7 +39,9 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"general" | "security">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "security" | "team">(
+    "general"
+  );
   const { toast } = useToast();
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -89,6 +106,13 @@ export default function SettingsPage() {
         >
           Security
         </Button>
+        <Button
+          variant={activeTab === "team" ? "default" : "ghost"}
+          className="w-full justify-start"
+          onClick={() => setActiveTab("team")}
+        >
+          Team Management
+        </Button>
       </div>
 
       {/* Content Section */}
@@ -119,6 +143,13 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </div>
+          </>
+        )}
+        {activeTab === "team" && (
+          <>
+            <h2 className="text-2xl font-semibold mb-6">Team Management</h2>
+
+            <TeamManagementSection />
           </>
         )}
 
@@ -166,6 +197,100 @@ export default function SettingsPage() {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+function TeamManagementSection() {
+  const [search, setSearch] = React.useState("");
+
+  const mockTeam = [
+    { name: "Tariq Sadi", username: "tsadi", role: "Member" },
+    { name: "Tariq Sadi", username: "tsadi", role: "Member" },
+    { name: "Tariq Sadi", username: "tsadi", role: "Owner" },
+    { name: "Jonas Weber", username: "jweber", role: "Member" },
+    { name: "Lina Ortega", username: "lortega", role: "Member" },
+  ];
+
+  const filteredTeam = mockTeam.filter((member) =>
+    member.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div className="mb-6 flex justify-between items-center">
+        <Input
+          placeholder="Search members"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full max-w-sm"
+        />
+        <Button className="ml-4">Invite</Button>
+      </div>
+
+      <div className="space-y-4">
+        {filteredTeam.map((member, idx) => (
+          <div
+            key={idx}
+            className="flex items-center justify-between border p-3 rounded-md bg-muted/20"
+          >
+            <div className="flex items-center gap-4">
+              <Avatar>
+                <AvatarFallback>
+                  {member.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="font-medium">{member.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  @{member.username}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <Select defaultValue={member.role}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Owner">Owner</SelectItem>
+                  <SelectItem value="Member">Member</SelectItem>
+                  <SelectItem value="Viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => alert(`Viewing ${member.name}`)}
+                  >
+                    View Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => alert(`Editing ${member.name}`)}
+                  >
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => alert(`Removing ${member.name}`)}
+                  >
+                    Remove
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
