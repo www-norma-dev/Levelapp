@@ -287,7 +287,7 @@ class ConversationSimulator:
                 continue
     
             # interaction_details = extract_interaction_details(response_text=response.text)
-            evaluation_results= await self.evaluate_interaction(interaction.user_message, interaction.reference_reply)
+            evaluation_results= await self.evaluate_interaction(response.text, interaction.reference_reply)
             # evaluation_results = None
             # if self.evaluation_fn:
             #     evaluation_results = self.evaluation_fn(
@@ -311,12 +311,11 @@ class ConversationSimulator:
                 "evaluation_results": evaluation_results,
             }
             results.append(result)
-        print(f"Here is the results: ", results)
         return  results
     async def evaluate_interaction(
             self,
-            extracted_vla_reply: str,
-            reference_vla_reply: str,
+            extracted_reply: str,
+            reference_reply: str,
             # extracted_metadata: Dict[str, Any],
             # reference_metadata: Dict[str, Any],
             # scenario_title: str
@@ -336,14 +335,14 @@ class ConversationSimulator:
         """
         openai_eval_task = self.evaluation_service.evaluate_response(
             provider="openai",
-            output_text=extracted_vla_reply,
-            reference_text=reference_vla_reply,
+            output_text=extracted_reply,
+            reference_text=reference_reply,
         )
 
         ionos_eval_task = self.evaluation_service.evaluate_response(
             provider="ionos",
-            output_text=extracted_vla_reply,
-            reference_text=reference_vla_reply,
+            output_text=extracted_reply,
+            reference_text=reference_reply,
         )
 
         openai_reply_evaluation, ionos_reply_evaluation = await asyncio.gather(openai_eval_task, ionos_eval_task)
