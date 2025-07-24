@@ -15,26 +15,29 @@ from rouge_score import rouge_scorer
 def extract_interaction_details(response_text: str) -> InteractionDetails:
     """
     Extracts interaction details from a response text.
+    Handles both JSON format and free text input.
 
     Args:
-        response_text (str): The response text in JSON format.
+        response_text (str): The response text (either JSON or free text).
 
     Returns:
-        InteractionDetails: Parsed interaction details, or default if parsing fails.
+        InteractionDetails: Parsed interaction details, or default with the text as reply if parsing fails.
     """
-    print("I'm now in extract_interaction_details", "data passed in:", response_text)
     try:
+        # First try to parse as JSON
         data = json.loads(response_text)
         payload = data.get("payload", {})
-        print("Here is the payload: ",payload)
         return InteractionDetails(
             reply=payload.get("message", "No response"),
             extracted_metadata=payload.get("metadata", {}),
         )
-    except json.JSONDecodeError as err:
-        msg = f"[extract_interaction_details] JSON decoding error: {err}"
-        add_event("ERROR", msg)
-        return InteractionDetails()
+    except json.JSONDecodeError:
+        # If JSON parsing fails, treat as free text
+        add_event("INFO", f"[extract_interaction_details] Processing as free text")
+        return InteractionDetails(
+            reply=response_text,
+            extracted_metadata={},
+        )
     except ValidationError as err:
         msg = f"[extract_interaction_details] Pydantic validation error: {err}"
         add_event("ERROR", msg)
