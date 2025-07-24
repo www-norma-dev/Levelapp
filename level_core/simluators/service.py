@@ -6,7 +6,7 @@ import time
 from typing import Dict, Any, List, Callable, Optional
 from collections import defaultdict
 from datetime import datetime
-from .schemas import InteractionEvaluationResult
+from .schemas import InteractionEvaluationResult, Interaction, BasicConversation, ConversationBatch
 from .utils import (
     extract_interaction_details,
     async_request,
@@ -16,27 +16,29 @@ from .utils import (
     calculate_handoff_stats,
 )
 from .event_collector import add_event
-from level_core.datastore.firestore.schemas import ScenarioBatch
-
+from level_core.simluators.schemas import ConversationBatch
+from level_core.evaluators.service import EvaluationService
+from level_core.evaluators.utils import evaluate_metadata
 class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
     """
-    def __init__(self, batch: ScenarioBatch, evaluation_fn: Optional[Callable] = None, persistence_fn: Optional[Callable] = None):
+    def __init__(self, batch: ConversationBatch, evaluation_service: EvaluationService, persistence_fn: Optional[Callable] = None):
         """
         Initialize the ConversationSimulator.
 
         Args:
-            batch (ScenarioBatch): The batch of scenarios to simulate (user supplies structure).
+            batch (ConversationBatch): The batch of scenarios to simulate (user supplies structure).
             evaluation_fn (Callable): Function to evaluate interactions (user supplies).
             persistence_fn (Callable): Function to persist results (user supplies).
         """
         self.batch = batch
-        self.evaluation_fn = evaluation_fn  # User-supplied evaluation logic
+        self.evaluation_service = evaluation_service  # User-supplied evaluation logic
         self.persistence_fn = persistence_fn  # User-supplied persistence logic
         self.collected_scores = defaultdict(list)
         self.evaluation_summaries = defaultdict(list)
         self.execution_events = []  # Collect execution events instead of logging
+
 
     def setup_simulator(self, endpoint: str, headers: Dict[str, str]):
         """
@@ -62,25 +64,25 @@ class ConversationSimulator:
             Dict[str, Any]: The test results with status information.
         """
         add_event("INFO", f"Starting batch test for batch: {name}")
-        started_at = datetime.now().isoformat()
-        start_time = time.time()
+        # started_at = datetime.now().isoformat()
+        # start_time = time.time()
         results = await self.simulate_conversation(attempts=attempts)
-        finished_at = datetime.now().isoformat()
-        elapsed_time = time.time() - start_time
-        average_execution_time = calculate_average(results["scenarios"])
-        test_load["results"] = {
-            "started_at": started_at,
-            "finished_at": finished_at,
-            "total_duration_seconds": elapsed_time,
-            "global_justification": self.evaluation_summaries,
-            "average_scores": results["average_scores"],
-            "scenarios": results["scenarios"],
-            "average_execution_time": average_execution_time,
-            "execution_events": self.execution_events,  # (Legacy) - consider using event_collector.execution_events
-        }
-        if self.persistence_fn:
-            self.persistence_fn(test_load)
-        return {"status": "COMPLETE"}
+        # finished_at = datetime.now().isoformat()
+        # elapsed_time = time.time() - start_time
+        # average_execution_time = calculate_average(results["scenarios"])
+        # test_load["results"] = {
+        #     "started_at": started_at,
+        #     "finished_at": finished_at,
+        #     "total_duration_seconds": elapsed_time,
+        #     "global_justification": self.evaluation_summaries,
+        #     "average_scores": results["average_scores"],
+        #     "scenarios": results["scenarios"],
+        #     "average_execution_time": average_execution_time,
+        #     "execution_events": self.execution_events,  # (Legacy) - consider using event_collector.execution_events
+        # }
+        # if self.persistence_fn:
+        #     self.persistence_fn(test_load)
+        return results
 
     async def simulate_conversation(self, attempts: int = 1) -> Dict[str, Any]:
         """
@@ -93,11 +95,11 @@ class ConversationSimulator:
             Dict[str, Any]: The simulation results with scenarios and average scores.
         """
         add_event("INFO", "Starting conversation simulation..")
-        semaphore = asyncio.Semaphore(value=len(self.batch.scenarios))
+        semaphore = asyncio.Semaphore(value=len(self.batch.conversations))
         async def run_with_semaphore(scenario: Any) -> Dict[str, Any]:
             async with semaphore:
                 return await self.simulate_single_scenario(scenario=scenario, attempts=attempts)
-        results = await asyncio.gather(*(run_with_semaphore(s) for s in self.batch.scenarios))
+        results = await asyncio.gather(*(run_with_semaphore(s) for s in self.batch.conversations))
         aggregate_scores: Dict[str, List[float]] = defaultdict(list)
         for scenarios_results in results:
             for key, value in scenarios_results.get("averageScores", {}).items():
@@ -121,18 +123,18 @@ class ConversationSimulator:
             "average_scores": overall_average_scores,
         }
 
-    async def simulate_single_scenario(self, scenario: Any, attempts: int = 1) -> Dict[str, Any]:
+    async def simulate_single_scenario(self, scenario: BasicConversation, attempts: int = 1) -> Dict[str, Any]:
         """
         Simulate a single scenario with the given number of attempts.
 
         Args:
-            scenario (Any): The scenario to simulate.
+            scenario (BasicConversation): The scenario to simulate.
             attempts (int, optional): Number of attempts to run. Defaults to 1.
 
         Returns:
             Dict[str, Any]: The simulation results for the single scenario.
         """
-        scenario_id = getattr(scenario, 'scenario_id', 'unknown')
+        scenario_id = scenario.id
         add_event("INFO", f"Starting simulation for scenario: {scenario_id}")
         attempt_results = []
         all_attempts_scores = defaultdict(list)
@@ -157,7 +159,7 @@ class ConversationSimulator:
                 # pass 
             single_attempt_scores = calculate_average(self.collected_scores)
             for key in all_attempts_scores:
-                all_attempts_scores[key].append(single_attempt_scores.get(key, 0.0))
+                all_attempts_scores[key].append(single_attempt_scores)
             # elapsed_time = time.time() - start_time
             # handoff_stats = calculate_handoff_stats(attempt_handoff_checks)
             # attempt_handoff_average = handoff_stats["average"]
@@ -170,6 +172,7 @@ class ConversationSimulator:
                 "execution_time": f"{time.time() - start_time:.2f}",
             })
         average_scores = calculate_average(all_attempts_scores)
+
         return {
             "scenario_id": scenario_id,
             "attempts": attempt_results,
@@ -244,12 +247,12 @@ class ConversationSimulator:
     #         "executionTime": f"{elapsed_time:.2f}",
     #     }
 
-    async def simulate__interactions(self, scenario: Any, conversation_id: str) -> List[Dict[str, Any]]:
+    async def simulate__interactions(self, scenario: BasicConversation, conversation_id: str) -> List[Dict[str, Any]]:
         """
         Simulate inbound interactions for a scenario.
 
         Args:
-            scenario (Any): The scenario to simulate.
+            scenario (BasicConversation): The scenario to simulate.
             conversation_id (str): The conversation ID.
 
         Returns:
@@ -257,11 +260,9 @@ class ConversationSimulator:
         """
         add_event("INFO", "Starting inbound interactions simulation..")
         results = []
-        inbound_interactions_sequence = getattr(scenario, 'inbound_interactions', [])
-        for interaction in inbound_interactions_sequence:
-            interaction.conversation_id = conversation_id
-            user_message = getattr(interaction, 'message_content', None)
-            payload = getattr(interaction, 'to_dict', lambda: dict())()
+        interactions_sequence = scenario.interactions
+        for interaction in interactions_sequence:
+            payload = {"prompt": interaction.user_message}
             response = await async_request(
                 url=self.endpoint,
                 headers=self.headers,
@@ -270,11 +271,11 @@ class ConversationSimulator:
             if not response or not response.status_code == 200:
                 add_event("ERROR", "Inbound interaction request failed.", {
                     "status_code": response.status_code if response else "No response",
-                    "conversation_id": conversation_id,
-                    "user_message": user_message
+                    "conversation_id": interaction.id,
+                    "user_message": interaction.user_message
                 })
                 result = {
-                    "user_message": user_message,
+                    "user_message": interaction.user_message,
                     "agent_reply": "Request failed",
                     "reference_reply": getattr(interaction, 'reference_reply', None),
                     "interaction_type": getattr(interaction, 'interaction_type', None),
@@ -284,38 +285,43 @@ class ConversationSimulator:
                 }
                 results.append(result)
                 continue
-            interaction_details = extract_interaction_details(response_text=response.text)
-            evaluation_results = None
-            if self.evaluation_fn:
-                evaluation_results = self.evaluation_fn(
-                    extracted_reply=interaction_details.reply,
-                    reference_reply=getattr(interaction, 'reference_reply', None),
-                    generated_metadata=interaction_details.extracted_metadata,
-                    reference_metadata=getattr(interaction, 'reference_metadata', {}),
-                    scenario_id=getattr(scenario, 'scenario_id', 'unknown')
-                )
+    
+            # interaction_details = extract_interaction_details(response_text=response.text)
+            evaluation_results= await self.evaluate_interaction(interaction.user_message, interaction.reference_reply)
+            # evaluation_results = None
+            # if self.evaluation_fn:
+            #     evaluation_results = self.evaluation_fn(
+            #         extracted_reply=response.text,
+            #         reference_reply=getattr(interaction, 'reference_reply', None),
+            #         generated_metadata= {},
+            #         reference_metadata=getattr(interaction, 'reference_metadata', {}),
+            #         scenario_id=getattr(scenario, 'scenario_id', 'unknown')
+            #     )
+
             # actual_handoff = interaction_details.handoff_details is not None
             # expected_handoff = getattr(interaction, 'expected_handoff_pass', False)
             # handoff_pass_check = 1 if expected_handoff == actual_handoff else 0
             result = {
-                "user_message": user_message,
-                "agent_reply": interaction_details.reply,
+                "user_message": interaction.user_message,
+                "agent_reply": response.text,
                 "reference_reply": getattr(interaction, 'reference_reply', None),
-                "interaction_type": interaction_details.interaction_type,
+                "interaction_type": None,
                 "reference_metadata": getattr(interaction, 'reference_metadata', {}),
-                "generated_metadata": interaction_details.extracted_metadata,
+                "generated_metadata": {},
                 "evaluation_results": evaluation_results,
             }
             results.append(result)
-        return results
+        print(f"Here is the results: ", results)
+        return  results
     async def evaluate_interaction(
             self,
             extracted_vla_reply: str,
             reference_vla_reply: str,
-            extracted_metadata: Dict[str, Any],
-            reference_metadata: Dict[str, Any],
-            scenario_title: str
-    ) -> InteractionEvaluationResult:
+            # extracted_metadata: Dict[str, Any],
+            # reference_metadata: Dict[str, Any],
+            # scenario_title: str
+    ):
+    # -> InteractionEvaluationResult:
         """
         Evaluate an interaction using OpenAI and Ionos evaluation services.
 
@@ -345,31 +351,37 @@ class ConversationSimulator:
         # extracted_metadata_evaluation = evaluate_metadata(
         #     expected=reference_metadata,
         #     actual=extracted_metadata,
+        #     field_types={}
         # )
 
-        return InteractionEvaluationResult(
-            openaiReplyEvaluation=openai_reply_evaluation,
-            ionosReplyEvaluation=ionos_reply_evaluation,
-            # extractedMetadataEvaluation=extracted_metadata_evaluation,
-            scenarioTitle=scenario_title
-        )
+        return {
+            "openai": openai_reply_evaluation,
+            "ionos": ionos_reply_evaluation,
+        }
 
-    def store_evaluation_results(self, results: InteractionEvaluationResult) -> None:
-        """
-        Store the evaluation results in the evaluation summary.
+        # return InteractionEvaluationResult(
+        #     openaiReplyEvaluation=openai_reply_evaluation,
+        #     ionosReplyEvaluation=ionos_reply_evaluation,
+        #     extractedMetadataEvaluation=extracted_metadata_evaluation,
+        #     scenarioTitle=scenario_title
+        # )
 
-        Args:
-            results (InteractionEvaluationResult): The evaluation results to store.
-        """
-        self.evaluation_results["openaiJustificationSummary"].append({
-            "scenario": results.scenarioTitle,
-            "justification": results.openaiReplyEvaluation.justification
-        })
-        self.evaluation_results["ionosJustificationSummary"].append({
-            "scenario": results.scenarioTitle,
-            "justification": results.ionosReplyEvaluation.justification
-        })
+    # def store_evaluation_results(self, results: InteractionEvaluationResult) -> None:
+    #     """
+    #     Store the evaluation results in the evaluation summary.
+
+    #     Args:
+    #         results (InteractionEvaluationResult): The evaluation results to store.
+    #     """
+    #     self.evaluation_results["openaiJustificationSummary"].append({
+    #         "scenario": results.scenarioTitle,
+    #         "justification": results.openaiReplyEvaluation.justification
+    #     })
+    #     self.evaluation_results["ionosJustificationSummary"].append({
+    #         "scenario": results.scenarioTitle,
+    #         "justification": results.ionosReplyEvaluation.justification
+    #     })
         
-        self.collected_scores["openai"].append(results.openaiReplyEvaluation.match_level)
-        self.collected_scores["ionos"].append(results.ionosReplyEvaluation.match_level)
-        self.collected_scores["metadata"].append(results.extractedMetadataEvaluation)
+    #     self.collected_scores["openai"].append(results.openaiReplyEvaluation.match_level)
+    #     self.collected_scores["ionos"].append(results.ionosReplyEvaluation.match_level)
+    #     self.collected_scores["metadata"].append(results.extractedMetadataEvaluation)
