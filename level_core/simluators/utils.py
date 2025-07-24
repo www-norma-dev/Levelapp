@@ -58,7 +58,6 @@ async def async_request(url: str, headers: Dict[str, str], payload: Dict[str, An
     """
     try:
         msg = f"[async_request] Request payload:\n{payload}\n---"
-        add_event("INFO", msg)
         async with httpx.AsyncClient(timeout=900) as client:
             response = await client.post(url=url, headers=headers, json=payload)
             msg = f"[async_request] Response:\n{response.text}\n---"
