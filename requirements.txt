@@ -1,0 +1,14 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+requests==2.31.0
+pydantic==2.5.0
+python-dotenv==1.0.0
+arrow
+rouge_score
+# LLM-as-Judge evaluation dependencies
+langchain-openai>=0.1.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+httpx>=0.24.0
+tenacity>=8.0.0
+rapidfuzz>=3.0.0 

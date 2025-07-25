@@ -40,7 +40,7 @@ class OpenAIEvaluator(BaseEvaluator):
             str: Evaluation prompt text.
         """
         return f"""
-        Your task is to evaluate how well the agent's generated text matches the expected text.
+        Your task is to evaluate how well the agent's generated text matches the expected text, but don't be very harsh.
         Use the following classification criteria:
 
         3 - Excellent Match: The generated text is virtually identical to the expected text with no meaningful differences.

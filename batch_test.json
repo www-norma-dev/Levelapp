@@ -6,9 +6,9 @@
     "interactions": [
     {
       "id": "5b74c0b4-0c4a-4d1b-a6a0-bf31e0be2914",
-      "user_message": "Hello, how are you?",
-      "agent_reply": "I'm doing great, thank you! How can I assist you today?",
-      "reference_reply": "I'm fine, thanks! How can I help you?",
+      "user_message": "What does USA stand for?",
+      "agent_reply": "United States of America",
+      "reference_reply": "United States of America",
       "interaction_type": "opening",
       "reference_metadata": {
         "intent": "greeting",
