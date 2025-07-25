@@ -1,41 +1,94 @@
 import asyncio
+import logging
+import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from dotenv import load_dotenv
+
 from level_core.simluators.service import ConversationSimulator
-from level_core.datastore.firestore.schemas import ScenarioBatch
+from level_core.evaluators.service import EvaluationService
+from level_core.evaluators.schemas import EvaluationConfig
+from level_core.simluators.schemas import BasicConversation, ConversationBatch
 
-# Optionally: from level_core.simluators.schemas import Interaction, BasicConversation
+# Load environment variables
+load_dotenv()
 
-def dummy_evaluation_fn(*args, **kwargs):
-    # Replace with real evaluation logic as needed
-    return {}
+# Logger setup
+logger = logging.getLogger("run-batch-test")
+logger.setLevel(logging.INFO)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(stream_handler)
 
-def dummy_persistence_fn(results):
-    # Replace with real persistence logic as needed
-    print("Persisted results:", results)
+# Initialize Flask
+app = Flask(__name__)
+CORS(app)
 
-def create_dummy_batch():
-    # Replace with real scenario loading logic
-    return ScenarioBatch(
-        metadata={"batch_name": "test_batch"},
-        content={"prompt": "What is the capital of France?"},
-    )
+@app.route("/run_batch_test", methods=["POST"])
+def run_batch_test():
+    try:
+        # Parse request
+        request_data = request.get_json(force=True, silent=True)
+        if not request_data:
+            logger.error("Missing or invalid JSON payload.")
+            return jsonify({"error": "Missing or invalid JSON payload"}), 400
 
-async def main():
-    batch = create_dummy_batch()
-    simulator = ConversationSimulator(
-        batch=batch,
-        evaluation_fn=dummy_evaluation_fn,
-        persistence_fn=dummy_persistence_fn
-    )
-    simulator.setup_simulator(
-        endpoint="http://localhost:8000/",
-        headers={"Content-Type": "application/json"}
-    )
-    result = await simulator.run_batch_test(
-        name="test_batch",
-        test_load={},
-        attempts=1
-    )
-    print("Simulation result:", result)
+        # Extract model_id from body
+        model_id = request_data.get("model_id")
+        if not model_id:
+            logger.error("Missing 'model_id' in payload.")
+            return jsonify({"error": "Missing 'model_id' in payload"}), 400
+
+        # Load credentials from env
+        api_key = os.getenv("IONOS_API_KEY")
+        base_url = os.getenv("IONOS_ENDPOINT")
+
+        if not api_key or not base_url:
+            logger.error("Missing IONOS_API_KEY or IONOS_ENDPOINT in .env")
+            return jsonify({"error": "Server misconfigured. API key or endpoint missing."}), 500
+
+        # Extract test batch
+        batch_test_data = request_data.get("test_batch")
+        if not batch_test_data:
+            logger.error("Missing 'test_batch' in payload.")
+            return jsonify({"error": "Missing 'test_batch' in payload"}), 400
+
+        logger.info(f"Running batch test for model: {model_id}")
+        logger.info(f"Description: {batch_test_data.get('description', '')}")
+
+        # Prepare evaluation service
+        evaluation_service = EvaluationService(logger=logger)
+        ionos_config = EvaluationConfig(
+            api_url=base_url,
+            api_key=api_key,
+            model_id=model_id
+        )
+        evaluation_service.set_config(provider="ionos", config=ionos_config)
+
+        # Build conversation objects
+        batch_test = BasicConversation.model_validate(batch_test_data)
+        conversation_batch = ConversationBatch(conversations=[batch_test])
+
+        simulator = ConversationSimulator(conversation_batch, evaluation_service)
+        simulator.setup_simulator(
+            endpoint=base_url,
+            headers={
+                "Content-Type": "application/json",
+                "x-model-id": model_id
+            }
+        )
+
+        results = asyncio.run(simulator.run_batch_test(
+            name=batch_test_data.get("description", "Unnamed Batch"),
+            test_load={},
+            attempts=1
+        ))
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        logger.exception("Exception in /run_batch_test")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app.run(host="0.0.0.0", port=5000, debug=True)
