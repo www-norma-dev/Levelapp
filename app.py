@@ -117,7 +117,7 @@ async def main_evaluate(request: MainEvaluationRequest):
         # Run the batch test (this is the main work)
         results = await simulator.run_batch_test(
             name=request.test_name,
-            test_load={},  # Empty as in main.py
+            test_load={}, 
             attempts=request.attempts
         )
         
@@ -172,14 +172,3 @@ if __name__ == "__main__":
     )
 
 
-if __name__ == "__main__":
-    import uvicorn
-    
-    # Run the server
-    uvicorn.run(
-        "app:app", 
-        host="0.0.0.0", 
-        port=8080, 
-        reload=True,
-        log_level="info"
-    )
