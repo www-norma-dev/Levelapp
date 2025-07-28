@@ -11,14 +11,6 @@ class DocType(Enum):
     SCENARIO = "scenario"
     BUNDLE = "metadata"
 
-
-class ScenarioBatch(BaseModel):
-    metadata: Optional[Dict[str, Any]] = None
-    content: Optional[Dict[str, Any]] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    scenarios: List[Any] = Field(default_factory=list)
-
 class ExtractionBundle(BaseModel):
     content: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
