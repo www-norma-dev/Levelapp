@@ -1,94 +1,174 @@
 import asyncio
-import logging
+import json
 import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from dotenv import load_dotenv
+from typing import Dict, Any
+from logging import Logger
 
+from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, ConfigDict
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+
+from level_core.simluators.schemas import BasicConversation, ConversationBatch
 from level_core.simluators.service import ConversationSimulator
 from level_core.evaluators.service import EvaluationService
 from level_core.evaluators.schemas import EvaluationConfig
-from level_core.simluators.schemas import BasicConversation, ConversationBatch
 
 # Load environment variables
 load_dotenv()
 
-# Logger setup
-logger = logging.getLogger("run-batch-test")
-logger.setLevel(logging.INFO)
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(stream_handler)
+# Global services
+evaluation_service = None
 
-# Initialize Flask
-app = Flask(__name__)
-CORS(app)
-
-@app.route("/run_batch_test", methods=["POST"])
-def run_batch_test():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize evaluation service on startup"""
+    global evaluation_service
+    
     try:
-        # Parse request
-        request_data = request.get_json(force=True, silent=True)
-        if not request_data:
-            logger.error("Missing or invalid JSON payload.")
-            return jsonify({"error": "Missing or invalid JSON payload"}), 400
+        # Initialize evaluation service
+        evaluation_service = EvaluationService(logger=Logger("EvaluationService"))
+        
+        # Set up default configurations if environment variables are available
+        if os.getenv("IONOS_API_KEY"):
+            ionos_config = EvaluationConfig(
+                api_url=os.getenv("IONOS_ENDPOINT"),
+                api_key=os.getenv("IONOS_API_KEY"),
+                model_id="0b6c4a15-bb8d-4092-82b0-f357b77c59fd",
+            )
+            evaluation_service.set_config(provider="ionos", config=ionos_config)
+        
+        if os.getenv("OPENAI_API_KEY"):
+            openai_config = EvaluationConfig(
+                api_url="",
+                api_key=os.getenv("OPENAI_API_KEY"),
+                model_id="",
+            )
+            evaluation_service.set_config(provider="openai", config=openai_config)
+            
+        print("✅ LevelApp API started successfully")
+        
+    except Exception as e:
+        print(f"❌ Error during startup: {e}")
+    
+    yield
+    print("🔄 LevelApp API shutting down...")
 
-        # Extract model_id from body
-        model_id = request_data.get("model_id")
-        if not model_id:
-            logger.error("Missing 'model_id' in payload.")
-            return jsonify({"error": "Missing 'model_id' in payload"}), 400
+# Initialize FastAPI app
+app = FastAPI(
+    title="LevelApp API",
+    description="Minimal API for conversation evaluation",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
-        # Load credentials from env
-        api_key = os.getenv("IONOS_API_KEY")
-        base_url = os.getenv("IONOS_ENDPOINT")
+# Main evaluation request schema
+class MainEvaluationRequest(BaseModel):
+    """Main evaluation request that mimics main.py behavior"""
+    model_config = ConfigDict(protected_namespaces=())
+    
+    test_batch: Dict[str, Any] = Field(description="The test batch data from batch_test.json format")
+    endpoint: str = Field(default="http://localhost:8000", description="LLM endpoint to test against")
+    model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID for headers")
+    attempts: int = Field(default=1, description="Number of test attempts")
+    test_name: str = Field(default="api_test", description="Name for the test run")
 
-        if not api_key or not base_url:
-            logger.error("Missing IONOS_API_KEY or IONOS_ENDPOINT in .env")
-            return jsonify({"error": "Server misconfigured. API key or endpoint missing."}), 500
 
-        # Extract test batch
-        batch_test_data = request_data.get("test_batch")
-        if not batch_test_data:
-            logger.error("Missing 'test_batch' in payload.")
-            return jsonify({"error": "Missing 'test_batch' in payload"}), 400
-
-        logger.info(f"Running batch test for model: {model_id}")
-        logger.info(f"Description: {batch_test_data.get('description', '')}")
-
-        # Prepare evaluation service
-        evaluation_service = EvaluationService(logger=logger)
-        ionos_config = EvaluationConfig(
-            api_url=base_url,
-            api_key=api_key,
-            model_id=model_id
-        )
-        evaluation_service.set_config(provider="ionos", config=ionos_config)
-
-        # Build conversation objects
-        batch_test = BasicConversation.model_validate(batch_test_data)
-        conversation_batch = ConversationBatch(conversations=[batch_test])
-
-        simulator = ConversationSimulator(conversation_batch, evaluation_service)
+@app.post("/evaluate", tags=["Main"])
+async def main_evaluate(request: MainEvaluationRequest):
+    """
+    End point to evaluate a conversation batch against an LLM endpoint.
+    """
+    try:
+        # Check if evaluation service is initialized
+        if evaluation_service is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Evaluation service not initialized. Server may need restart."
+            )
+        
+        # Validate and create BasicConversation from test_batch
+        try:
+            batch_test = BasicConversation.model_validate(request.test_batch)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid test_batch format: {str(e)}"
+            )
+        
+        # Create conversations batch
+        conversations_batch = ConversationBatch(conversations=[batch_test])
+        
+        # Set up simulator (mimicking main.py)
+        simulator = ConversationSimulator(conversations_batch, evaluation_service)
+        
+        # Setup simulator with endpoint and headers
+        headers = {
+            "Content-Type": "application/json",
+            "x-model-id": request.model_id
+        }
+        
         simulator.setup_simulator(
-            endpoint=base_url,
-            headers={
-                "Content-Type": "application/json",
-                "x-model-id": model_id
+            endpoint=request.endpoint,
+            headers=headers
+        )
+        
+        # Run the batch test (this is the main work)
+        results = await simulator.run_batch_test(
+            name=request.test_name,
+            test_load={}, 
+            attempts=request.attempts
+        )
+        
+        # Convert results to JSON-serializable format
+        def convert_uuid_to_str(obj):
+            """Recursively convert UUID objects to strings for JSON serialization"""
+            import uuid
+            if isinstance(obj, uuid.UUID):
+                return str(obj)
+            elif isinstance(obj, dict):
+                return {key: convert_uuid_to_str(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_uuid_to_str(item) for item in obj]
+            elif hasattr(obj, '__dict__'):
+                return convert_uuid_to_str(obj.__dict__)
+            else:
+                return obj
+        
+        serializable_results = convert_uuid_to_str(results)
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "message": "Evaluation completed successfully",
+                "test_name": request.test_name,
+                "endpoint": request.endpoint,
+                "model_id": request.model_id,
+                "attempts": request.attempts,
+                "results": serializable_results
             }
         )
-
-        results = asyncio.run(simulator.run_batch_test(
-            name=batch_test_data.get("description", "Unnamed Batch"),
-            test_load={},
-            attempts=1
-        ))
-
-        return jsonify(results), 200
-
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("Exception in /run_batch_test")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Evaluation failed: {str(e)}"
+        )
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    import uvicorn
+    
+    # Run the server
+    uvicorn.run(
+        "app:app", 
+        host="0.0.0.0", 
+        port=8080, 
+        reload=True,
+        log_level="info"
+    )
+
+
