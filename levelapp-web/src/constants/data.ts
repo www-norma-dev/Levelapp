@@ -55,6 +55,19 @@ export const navItems: NavItem[] = [
     ],
   },
   {
+    title: "Evaluate",
+    url: "/dashboard/evaluate",
+    icon: "database",
+    isActive: true,
+    items: [
+      {
+        title: "Run Evaluation",
+        url: "/dashboard/evaluate",
+        icon: "database",
+      },
+    ],
+  },
+  {
     title: "Settings",
     url: "/dashboard/settings",
     icon: "settings",
