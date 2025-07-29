@@ -62,6 +62,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+from fastapi.middleware.cors import CORSMiddleware
+
+# Add CORS middleware to allow cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allow all origins for simplicity, adjust as needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # Main evaluation request schema
 class MainEvaluationRequest(BaseModel):
@@ -122,19 +133,41 @@ async def main_evaluate(request: MainEvaluationRequest):
         )
         
         # Convert results to JSON-serializable format
-        def convert_uuid_to_str(obj):
-            """Recursively convert UUID objects to strings for JSON serialization"""
+        #Modified to handle UUIDs and other complex types
+        def convert_uuid_to_str(obj, seen=None):
             import uuid
+            import types
+
+            if seen is None:
+                seen = set()
+
+            obj_id = id(obj)
+            if obj_id in seen:
+                return "<recursive>"
+
+            seen.add(obj_id)
+
             if isinstance(obj, uuid.UUID):
                 return str(obj)
             elif isinstance(obj, dict):
-                return {key: convert_uuid_to_str(value) for key, value in obj.items()}
+                return {key: convert_uuid_to_str(value, seen) for key, value in obj.items()}
             elif isinstance(obj, list):
-                return [convert_uuid_to_str(item) for item in obj]
+                return [convert_uuid_to_str(item, seen) for item in obj]
+            elif isinstance(obj, tuple):
+                return tuple(convert_uuid_to_str(item, seen) for item in obj)
+            elif isinstance(obj, set):
+                return {convert_uuid_to_str(item, seen) for item in obj}
+            elif isinstance(obj, types.MappingProxyType):
+                return convert_uuid_to_str(dict(obj), seen)
             elif hasattr(obj, '__dict__'):
-                return convert_uuid_to_str(obj.__dict__)
+                return convert_uuid_to_str(vars(obj), seen)
             else:
-                return obj
+                try:
+                    json.dumps(obj)  # test if JSON serializable
+                    return obj
+                except:
+                    return str(obj)
+
         
         serializable_results = convert_uuid_to_str(results)
         

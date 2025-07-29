@@ -1,0 +1,71 @@
+/* page.module.css */
+.container {
+  min-height: 100vh;
+  background-color: #f9fafb;
+  padding: 3rem 1.5rem;
+  color: #1f2937;
+  font-family: sans-serif;
+}
+
+.formWrapper {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.heading {
+  font-size: 2rem;
+  font-weight: bold;
+  text-align: center;
+  color: #1d4ed8;
+  margin-bottom: 2rem;
+}
+
+.label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background-color: white;
+  margin-bottom: 1rem;
+}
+
+.textarea {
+  font-family: monospace;
+  min-height: 12rem;
+}
+
+.button {
+  display: inline-block;
+  background-color: #2563eb;
+  color: white;
+  padding: 0.75rem 2rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.button:hover {
+  background-color: #1e40af;
+}
+
+.button:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.responseBox {
+  background-color: #f3f4f6;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+  color: #374151;
+}
