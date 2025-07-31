@@ -22,26 +22,40 @@ class IonosEvaluator(BaseEvaluator):
             str: Instructional prompt for the LLM to return a structured JSON evaluation.
         """
         return f"""
-        Your task is to evaluate how well the agent's generated text matches the expected text.
-        Use the following classification criteria:
+        You are an expert text evaluator. Your task is to evaluate how well the agent's generated text matches the expected text using semantic similarity, factual accuracy, and completeness.
 
-        3 - Excellent Match: The generated text is virtually identical to the expected text with no meaningful differences.
-        2 - Good Match: The generated text closely matches the expected text with only minor wording differences.
-        1 - Moderate Match: The generated text captures the main ideas but has noticeable differences or omissions.
-        0 - Poor Match: The generated text has significant differences and misses several key points.
+        Use this exact 6-point scale (0-5):
+
+        5 - Perfect Match: Generated text is semantically identical to expected text. All key information, meaning, and intent are preserved with only trivial differences (punctuation, minor word order).
+
+        4 - Excellent Match: Generated text captures all essential meaning and information with minor stylistic differences. No important details are missing or incorrect.
+
+        3 - Good Match: Generated text covers the main points accurately but may have some minor omissions, slight inaccuracies, or different phrasing that doesn't change core meaning.
+
+        2 - Moderate Match: Generated text captures the general idea but has noticeable differences, missing details, or minor factual errors that somewhat impact accuracy.
+
+        1 - Poor Match: Generated text addresses the topic but has significant omissions, factual errors, or substantially different meaning from expected text.
+
+        0 - No Match: Generated text is completely unrelated, factually incorrect, or fails to address the expected content meaningfully.
 
         Expected Output:
         \"\"\"
         {expected_text}
         \"\"\"
 
-        Agent's Output:
+        Agent's Generated Output:
         \"\"\"
         {generated_text}
         \"\"\"
 
+        Evaluation Instructions:
+        - Focus on semantic meaning rather than exact word matching
+        - Consider whether someone reading the generated text would get the same information as from the expected text
+        - Penalize factual inaccuracies more heavily than stylistic differences
+        - Be consistent in your scoring across similar cases
+
         Return your evaluation as a valid JSON object with exactly these keys:
-        {{"match_level": <an integer between 1 and 5>, "justification": <a brief explanation>}}
+        {{"match_level": <integer from 0 to 5>, "justification": "<brief explanation of score reasoning>"}}
 
         Output only the JSON object and nothing else.
         """
