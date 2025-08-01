@@ -64,10 +64,7 @@ app = FastAPI(
 )
 from fastapi.middleware.cors import CORSMiddleware
 
-origins = [
-    "http://localhost:3000", 
-    "http://127.0.0.1:3000",
-]
+origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
 
 app.add_middleware(
     CORSMiddleware,

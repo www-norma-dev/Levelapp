@@ -69,18 +69,21 @@ export default function EvaluatePage() {
         description: "Quick evaluation from UI",
         details: { name: "Manual Test", version: "1.0" },
       },
-      endpoint: "http://localhost:8000",
+      endpoint: `${process.env.NEXT_PUBLIC_BACKEND_ENDPOINT}`,
       model_id: values.modelId,
       attempts: 1,
       test_name: "manual_test",
     };
 
     try {
-      const res = await fetch("http://localhost:8080/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_EVALUATION_API_URL}/evaluate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
       const data = await res.json();
       setResult(JSON.stringify(data, null, 2));
