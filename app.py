@@ -62,7 +62,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+from fastapi.middleware.cors import CORSMiddleware
 
+origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Main evaluation request schema
 class MainEvaluationRequest(BaseModel):
     """Main evaluation request that mimics main.py behavior"""
@@ -136,7 +146,9 @@ async def main_evaluate(request: MainEvaluationRequest):
             else:
                 return obj
         
-        serializable_results = convert_uuid_to_str(results)
+        from fastapi.encoders import jsonable_encoder
+        serializable_results = jsonable_encoder(results)
+
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,
