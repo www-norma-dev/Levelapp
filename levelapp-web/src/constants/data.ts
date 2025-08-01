@@ -28,45 +28,32 @@ export const navItems: NavItem[] = [
       },
     ],
   },
-  {
-    title: "API Config",
-    url: "/dashboard/api-config",
-    icon: "webhook",
-    isActive: true,
-    items: [
-      {
-        title: "Manage api's",
-        url: "/dashboard/api-config",
-        icon: "product",
-      },
-    ],
-  },
-  {
-    title: "Datasets",
-    url: "/dashboard/datasets",
-    icon: "database",
-    isActive: true,
-    items: [
-      {
-        title: "Manage datasets",
-        url: "/dashboard/datasets",
-        icon: "product",
-      },
-    ],
-  },
-  {
-    title: "Evaluate",
-    url: "/dashboard/evaluate",
-    icon: "database",
-    isActive: true,
-    items: [
-      {
-        title: "Run Evaluation",
-        url: "/dashboard/evaluate",
-        icon: "database",
-      },
-    ],
-  },
+  // {
+  //   title: "API Config",
+  //   url: "/dashboard/api-config",
+  //   icon: "webhook",
+  //   isActive: true,
+  //   items: [
+  //     {
+  //       title: "Manage api's",
+  //       url: "/dashboard/api-config",
+  //       icon: "product",
+  //     },
+  //   ],
+  // },
+  // {
+  //   title: "Datasets",
+  //   url: "/dashboard/datasets",
+  //   icon: "database",
+  //   isActive: true,
+  //   items: [
+  //     {
+  //       title: "Manage datasets",
+  //       url: "/dashboard/datasets",
+  //       icon: "product",
+  //     },
+  //   ],
+  // },
   {
     title: "Settings",
     url: "/dashboard/settings",
