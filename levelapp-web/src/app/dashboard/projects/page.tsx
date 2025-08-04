@@ -3,12 +3,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NewProjectDialog } from "./_components/NewProjectModal";
 import { Brain, Calendar, Trash2, Copy } from "lucide-react";
@@ -39,7 +34,28 @@ export default function ProjectsPage() {
   const { toast } = useToast();
 
   // No Firestore: empty placeholders
-  const [projects] = useState<Project[]>([]);
+  // const [projects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>([
+    {
+      id: "proj-1",
+      name: "Llama Chatbot",
+      description: "Evaluation of Llama responses",
+      createdBy: "bedra",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "active",
+    },
+    {
+      id: "proj-2",
+      name: "BERT QA",
+      description: "Question Answering project",
+      createdBy: "bedra",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "active",
+    },
+  ]);
+
   const [loading] = useState(false);
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
 
@@ -73,7 +89,7 @@ export default function ProjectsPage() {
             <Card
               key={project.id}
               className="border border-gray-200 shadow-sm rounded-2xl hover:shadow-md hover:-translate-y-1 transition cursor-pointer"
-              onClick={() => router.push(`/dashboard/projects/${project.id}`)}
+              onClick={() => router.push(`/dashboard/projects/${project.name}`)}
             >
               <CardHeader className="p-6 bg-gray-50 rounded-t-2xl">
                 <div className="flex justify-between items-start">
