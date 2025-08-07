@@ -3,26 +3,23 @@ import logging
 import asyncio
 from typing import Optional
 
-import openai
+import litellm
 
 from .schemas_litellm import LiteLLMConfig, EvaluationResult
 
 logger = logging.getLogger("LiteLLMEvaluator")
 
+
 class LiteLLMEvaluator:
     def __init__(self, config: LiteLLMConfig):
         self.config = config
+        
+        if not config.model:
+            logger.warning("No API key found in config or environment.")
 
-        # Load API key, prefer config value, else fallback to env vars
-        api_key = config.api_key or os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.warning("No OpenAI API key found in config or environment.")
-
-        openai.api_key = api_key
-        if config.api_base:
-            openai.api_base = config.api_base
-
-        self.client = openai.OpenAI()
+        # Logging for transparency
+        logger.info(f"Using model: {self.config.model}")
+        logger.info(f"Additional config: {self.config.additional_config}")
 
     async def evaluate(self, prompt: str, expected_response: str) -> EvaluationResult:
         eval_prompt = (
@@ -34,7 +31,7 @@ class LiteLLMEvaluator:
         loop = asyncio.get_running_loop()
 
         def sync_call():
-            return self.client.chat.completions.create(
+            return litellm.completion(
                 model=self.config.model,
                 messages=[{"role": "user", "content": eval_prompt}],
                 temperature=self.config.additional_config.get("temperature", 0.0),
@@ -52,7 +49,7 @@ class LiteLLMEvaluator:
             return EvaluationResult(
                 match_level=match_level,
                 justification=generated_text,
-                metadata={"output": prompt, "expected": expected_response}
+                metadata={"model": self.config.model,"output": prompt, "expected": expected_response}
             )
         except Exception as e:
             logger.error(f"Evaluation failed: {e}")
