@@ -149,7 +149,18 @@ async def main_evaluate(request: MainEvaluationRequest):
         from fastapi.encoders import jsonable_encoder
         serializable_results = jsonable_encoder(results)
 
-        
+        from level_core.datastore.registry import get_datastore
+        import uuid
+
+        firestore_service = get_datastore(backend="firestore", credentials_path=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+
+        firestore_service.save_batch_test_results(
+            user_id="test-user",
+            project_id=request.test_name,
+            batch_id=f"batch-{uuid.uuid4()}",
+            data=serializable_results
+        )
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
