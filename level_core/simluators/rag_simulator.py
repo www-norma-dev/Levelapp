@@ -5,10 +5,7 @@ import asyncio
 import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-import httpx
-from bs4 import BeautifulSoup
 import textwrap
-from collections import defaultdict
 from uuid import uuid4, UUID
 
 from .rag_schemas import (
@@ -19,6 +16,9 @@ from .rag_schemas import (
 from .utils import async_request
 from .event_collector import log_rag_event
 from level_core.evaluators.rag_evaluator import RAGEvaluator
+from .prompts import build_expected_answer_messages, build_fallback_expected_messages
+from .scraper import scrape_page
+from .chat_client import post_chat
 
 class RAGSimulator:
     """
@@ -52,41 +52,8 @@ class RAGSimulator:
         self.sessions = {}
 
     def _build_expected_answer_messages(self, selected_chunks: List[str], question: str) -> List[Dict[str, str]]:
-        """
-        Build a single, well-structured prompt that forces the model to use the selected chunks.
-        We join the chunks into one CONTEXT block and place the QUESTION after it.
-        """
-        # Join selected chunks into a single CONTEXT block and cap size defensively
-        max_context_chars = 12000  # simple guard; tune as needed
-        context = "\n\n---\n\n".join(selected_chunks)
-        if len(context) > max_context_chars:
-            context = context[:max_context_chars]
-
-        system_msg = {
-            "role": "system",
-            "content": (
-                "You are a precise answer extractor. Answer the QUESTION strictly based on the provided CONTEXT. "
-                "Synthesize across multiple parts of the CONTEXT when needed. Be concise and factual. "
-                "If the answer truly isn't supported by the CONTEXT, reply exactly: 'Not found in the provided context.'"
-            ),
-        }
-        user_msg = {
-            "role": "user",
-            "content": (
-                f"CONTEXT:\n{context}\n\n"
-                f"QUESTION:\n{question}\n\n"
-                f"Answer using only the CONTEXT. If the question asks for features/services/details, summarize precisely."
-            ),
-        }
-
-        # Lightweight preview for debugging
-        try:
-            preview = (user_msg["content"][:400] + "...") if len(user_msg["content"]) > 400 else user_msg["content"]
-            log_rag_event("INFO", f"EXPECTED_ANSWER_PROMPT_PREVIEW: {preview}")
-        except Exception:
-            pass
-
-        return [system_msg, user_msg]
+        """Delegates to prompts module (kept for backward compatibility)."""
+        return build_expected_answer_messages(selected_chunks, question)
         
     async def initialize_rag_and_scrape(self, request: RAGInitRequest) -> RAGInitResponse:
         """
@@ -120,8 +87,7 @@ class RAGSimulator:
         if not init_response or init_response.status_code != 200:
             raise Exception(f"RAG initialization failed: {init_response.status_code if init_response else 'No response'}")
         
-        # Independently scrape the same page
-        scraped_chunks = await self._scrape_page(request.page_url, request.chunk_size)
+        scraped_chunks = await scrape_page(request.page_url, request.chunk_size)
         
         # Store session data with string key
         self.sessions[session_id_str] = {
@@ -147,67 +113,8 @@ class RAGSimulator:
         )
     
     async def _scrape_page(self, page_url: str, chunk_size: int) -> List[ChunkInfo]:
-        """
-        Independently scrape page and create chunks.
-        
-        Args:
-            page_url: URL to scrape
-            chunk_size: Character size per chunk
-            
-        Returns:
-            List of ChunkInfo objects
-        """
-        log_rag_event("INFO", f"Scraping page: {page_url}")
-
-        # Use a generous timeout for slow pages
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-            response = await client.get(page_url)
-            response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        paras = [p.get_text().strip() for p in soup.find_all("p") if p.get_text().strip()]
-        full_text = "\n".join(paras)
-
-        if full_text:
-            preview = full_text[:400] + ("..." if len(full_text) > 400 else "")
-            log_rag_event("INFO", f"SCRAPE_PREVIEW ({len(full_text)} chars): {preview}")
-
-        # Create paragraph-based chunks to keep text readable and reorderable
-        chunks: List[ChunkInfo] = []
-        current: List[str] = []
-        current_len = 0
-        sep = "\n\n"  # separate paragraphs inside a chunk
-
-        for para in paras:
-            p_len = len(para)
-            if current_len == 0:
-                # start a new chunk
-                current = [para]
-                current_len = p_len
-            else:
-                # would adding this paragraph exceed the target chunk size?
-                projected = current_len + len(sep) + p_len
-                if projected > chunk_size:
-                    # flush current chunk
-                    chunk_content = sep.join(current)
-                    word_count = len(chunk_content.split())
-                    chunks.append(ChunkInfo(index=len(chunks), content=chunk_content, word_count=word_count))
-                    # start new chunk with this paragraph
-                    current = [para]
-                    current_len = p_len
-                else:
-                    # append to current chunk
-                    current.append(para)
-                    current_len = projected
-
-        # flush any remaining paragraphs as the last chunk
-        if current_len > 0:
-            chunk_content = sep.join(current)
-            word_count = len(chunk_content.split())
-            chunks.append(ChunkInfo(index=len(chunks), content=chunk_content, word_count=word_count))
-
-        log_rag_event("INFO", f"Created {len(chunks)} chunks from {page_url}")
-        return chunks
+        """Delegates to scraper helper (kept for backward compatibility)."""
+        return await scrape_page(page_url, chunk_size)
     
     async def generate_expected_answer(self, request: ChunkSelectionRequest) -> ExpectedAnswerResponse:
         """
@@ -253,26 +160,8 @@ class RAGSimulator:
         # Retry once with a gentler instruction if we hit the strict fallback
         if expected_answer.strip() == "Not found in the provided context." and selected_chunks:
             log_rag_event("INFO", "Fallback triggered; retrying expected answer with summarization prompt")
-            # Precompute joined context to avoid backslashes inside f-string expressions
-            _sep = "\n\n---\n\n"
-            _joined_ctx = _sep.join(selected_chunks)
-            alt_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Summarize the key facts from the CONTEXT that answer the QUESTION. "
-                        "Only use information present in CONTEXT. If nothing relevant exists, reply exactly: 'Not found in the provided context.'"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"CONTEXT:\n{_joined_ctx}\n\n"
-                        f"QUESTION:\n{request.prompt}\n\n"
-                        f"Answer concisely using only the CONTEXT."
-                    ),
-                },
-            ]
+            # Build fallback messages via prompts module
+            alt_messages = build_fallback_expected_messages(selected_chunks, request.prompt)
             if getattr(request, "expected_model", None):
                 temp_eval = RAGEvaluator(
                     generation_service=self.generation_service,
@@ -397,51 +286,7 @@ class RAGSimulator:
             Chatbot response
         """
         log_rag_event("INFO", f"Querying chatbot with prompt: {prompt[:50]}...")
-
-        payload = {"prompt": prompt}
         headers = {**self.headers, "x-model-id": model_id}
-        eb = endpoint_base.rstrip("/")
-        cp = chat_path if chat_path.startswith("/") else f"/{chat_path}"
-        primary_url = f"{eb}{cp}"
-        log_rag_event("INFO", f"Chatbot POST URL: {primary_url} | x-model-id={model_id}")
-
-        response = await async_request(
-            url=primary_url,
-            headers=headers,
-            payload=payload,
-        )
-
-        # Fallback: if configured path fails, retry at base root
-        if (not response or response.status_code != 200) and cp != "/":
-            fallback_url = f"{eb}/"
-            log_rag_event("WARN", f"Primary chat URL failed; retrying at {fallback_url}")
-            response = await async_request(
-                url=fallback_url,
-                headers=headers,
-                payload=payload,
-            )
-
-        if not response or response.status_code != 200:
-            raise Exception(f"Chatbot query failed: {response.status_code if response else 'No response'}")
-
-        chatbot_answer = response.text if isinstance(response.text, str) else response.json().get("response", "")
-
+        answer = await post_chat(endpoint_base, chat_path, headers, prompt)
         log_rag_event("INFO", "Chatbot response received")
-        return chatbot_answer
-    
-    def cleanup_session(self, session_id: UUID) -> bool:
-        """
-        Clean up session data to free memory.
-        
-        Args:
-            session_id: Session ID to clean up
-            
-        Returns:
-            True if session was found and cleaned up
-        """
-        session_str = str(session_id)
-        if session_str in self.sessions:
-            del self.sessions[session_str]
-            log_rag_event("INFO", f"Cleaned up session: {session_id}")
-            return True
-        return False
+        return answer

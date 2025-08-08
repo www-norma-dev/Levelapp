@@ -11,6 +11,7 @@ from level_core.entities.metric import RAGMetrics, LLMComparison
 from level_core.simluators.event_collector import log_rag_event
 from level_core.generators.service import GenerationService
 from level_core.evaluators.service import EvaluationService
+from level_core.simluators.constants import JUDGE_STRONG_THRESHOLD, JUDGE_TIE_SCORE
 
 
 class RAGEvaluator:
@@ -207,9 +208,9 @@ Respond with only the JSON object.
             #  - score == 3: tie
             #  - score < 3: expected is better
             score = getattr(res, "match_level", 0)
-            if score >= 4:
+            if score >= JUDGE_STRONG_THRESHOLD:
                 better = "chatbot"
-            elif score == 3:
+            elif score == JUDGE_TIE_SCORE:
                 better = "tie"
             else:
                 better = "expected"
