@@ -27,11 +27,15 @@ async def lifespan(app: FastAPI):
     global evaluation_service
     
     try:
+        print("Starting LevelApp API initialization...")
+        
         # Initialize evaluation service
         evaluation_service = EvaluationService(logger=Logger("EvaluationService"))
+        print("Evaluation service initialized")
         
         # Set up default configurations if environment variables are available
         if os.getenv("IONOS_API_KEY"):
+            print("IONOS API key found")
             ionos_config = EvaluationConfig(
                 api_url=os.getenv("IONOS_ENDPOINT"),
                 api_key=os.getenv("IONOS_API_KEY"),
@@ -40,20 +44,25 @@ async def lifespan(app: FastAPI):
             evaluation_service.set_config(provider="ionos", config=ionos_config)
         
         if os.getenv("OPENAI_API_KEY"):
+            print(f"OpenAI API key found: {os.getenv('OPENAI_API_KEY')[:20]}...")
             openai_config = EvaluationConfig(
                 api_url="",
                 api_key=os.getenv("OPENAI_API_KEY"),
                 model_id="",
             )
             evaluation_service.set_config(provider="openai", config=openai_config)
+        else:
+            print("No OpenAI API key found!")
             
-        print("✅ LevelApp API started successfully")
+        print("LevelApp API started successfully")
         
     except Exception as e:
-        print(f"❌ Error during startup: {e}")
+        print(f"Error during startup: {e}")
+        import traceback
+        traceback.print_exc()
     
     yield
-    print("🔄 LevelApp API shutting down...")
+    print("LevelApp API shutting down...")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -132,23 +141,48 @@ async def main_evaluate(request: MainEvaluationRequest):
         )
         
         # Convert results to JSON-serializable format
+        import uuid
+        from enum import Enum
+        from types import MappingProxyType
+
         def convert_uuid_to_str(obj):
-            """Recursively convert UUID objects to strings for JSON serialization"""
+            """Recursively convert objects to JSON-serializable format"""
             import uuid
+            from types import MappingProxyType
+            from enum import Enum
+
             if isinstance(obj, uuid.UUID):
                 return str(obj)
+            elif isinstance(obj, Enum):                             
+                return obj.value
+            elif isinstance(obj, MappingProxyType):
+                return dict(obj)
             elif isinstance(obj, dict):
                 return {key: convert_uuid_to_str(value) for key, value in obj.items()}
             elif isinstance(obj, list):
                 return [convert_uuid_to_str(item) for item in obj]
+            elif isinstance(obj, tuple):
+                return [convert_uuid_to_str(item) for item in obj]
             elif hasattr(obj, '__dict__'):
                 return convert_uuid_to_str(obj.__dict__)
+            elif hasattr(obj, 'model_dump'):                         
+                return convert_uuid_to_str(obj.model_dump())
             else:
+<<<<<<< Updated upstream
                 return obj
         
         from fastapi.encoders import jsonable_encoder
         serializable_results = jsonable_encoder(results)
 
+=======
+                try:                                                
+                    return dict(obj)
+                except:
+                    return str(obj)
+
+
+        serializable_results = convert_uuid_to_str(results)
+>>>>>>> Stashed changes
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -184,3 +218,8 @@ if __name__ == "__main__":
     )
 
 
+# Add to existing imports
+from rag_routes import rag_router
+
+# Add to existing app initialization
+app.include_router(rag_router)
