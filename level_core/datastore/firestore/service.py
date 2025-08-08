@@ -4,7 +4,6 @@
 import logging
 from typing import List, Dict, Any, Type
 
-from firebase_admin import App, firestore
 from google.cloud import storage
 from google.cloud.firestore_v1 import DocumentReference, DocumentSnapshot, SERVER_TIMESTAMP
 
@@ -18,6 +17,7 @@ from .config import DEFAULT_SCENARIO_FIELD
 from .paths import get_document_path, get_results_path, store_extracted_data_path, save_batch_results_path  
 from ..base import BaseDatastore
 from .exceptions import FirestoreServiceError
+from google.cloud import firestore
 
 
 ERROR_MESSAGES = {
@@ -33,15 +33,21 @@ logger = logging.getLogger("batch-test")
 
 
 class FirestoreService(BaseDatastore):
-    """Service layer to manage Firestore interactions and orchestrate scenario data fetching."""
-    def __init__(self, app: App = None):
+    def __init__(self, credentials_path: str = None):
         """
         Args:
-            app (App): Firestore app object.
+            credentials_path (str): Path to service account JSON key file.
         """
-        self._app = app
-        self._firestore_client = firestore.client(app=self._app)
-        self._storage_client = storage.Client(project=self._app.project_id)
+        if credentials_path:
+            self._firestore_client = firestore.Client.from_service_account_json(credentials_path)
+        else:
+            self._firestore_client = firestore.Client()
+
+        self._storage_client = storage.Client()
+
+        from google.auth import default
+        creds, project = default()
+
 
     @staticmethod
     def parser(doc: DocumentSnapshot, model: Type[BaseModel]) -> BaseModel:
@@ -218,7 +224,7 @@ class FirestoreService(BaseDatastore):
             raise ValueError("Invalid input parameters")
 
         try:
-            doc_ref = get_document_path(user_id=user_id, collection_id=collection_id, document_id=document_id)
+            doc_ref = get_document_path(self._firestore_client,user_id=user_id, collection_id=collection_id, document_id=document_id)
             doc = doc_ref.get()
 
             if not doc.exists:
@@ -305,6 +311,7 @@ class FirestoreService(BaseDatastore):
         try:
             logger.info(f"[fetch_stored_results] Fetching stored results for batch ID: {batch_id}")
             doc_ref = get_results_path(
+                self._firestore_client,
                 user_id=user_id,
                 collection_id=collection_id,
                 project_id=project_id,
@@ -380,12 +387,13 @@ class FirestoreService(BaseDatastore):
             batch_id (str): ID of the batch (used as the document ID).
             data (Dict[str, Any]): Batch simulation result data.
         """
-        data["updatedAt"] = SERVER_TIMESTAMP
+        doc_data = dict(data)
+        doc_data["updatedAt"] = SERVER_TIMESTAMP
 
         doc_ref = save_batch_results_path(self._firestore_client, user_id, project_id, batch_id)
 
         try:
-            doc_ref.set(data, merge=True)
+            doc_ref.set(doc_data, merge=True)
             logger.info(
                 f"[save_batch_test_results] Merged data into batchId: {batch_id}"
             )
