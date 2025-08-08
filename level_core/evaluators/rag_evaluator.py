@@ -1,41 +1,44 @@
 """
 RAG-specific evaluator for retrieval quality assessment.
+Refactored to use GenerationService for expected answers and EvaluationService for judge.
 """
-import asyncio
 import os
+from typing import List, Dict, Optional
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from nltk.translate.meteor_score import meteor_score
-from typing import List, Dict, Any
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
 
-# Load environment variables from .env file
-load_dotenv()
-
-from level_core.simluators.rag_schemas import RAGMetrics, LLMComparison
+from level_core.entities.metric import RAGMetrics, LLMComparison
 from level_core.simluators.event_collector import log_rag_event
+from level_core.generators.service import GenerationService
+from level_core.evaluators.service import EvaluationService
+
 
 class RAGEvaluator:
     """
     Evaluator for RAG retrieval quality using NLP metrics and LLM-as-judge.
     """
     
-    def __init__(self):
-        """Initialize RAG evaluator with OpenAI configuration."""
-        self._client: AsyncOpenAI | None = None  # Lazy init
-        # Allow overriding model via env
-        self.expected_model = os.getenv("LEVELAPP_EXPECTED_MODEL", "gpt-4o-mini")
+    def __init__(self, generation_service: GenerationService | None = None, evaluation_service: EvaluationService | None = None, expected_model: Optional[str] = None, judge_provider: Optional[str] = None):
+        """Initialize RAG evaluator with services.
 
-    def _get_openai_client(self) -> AsyncOpenAI:
-        """Lazy load OpenAI client with current API key."""
-        if self._client is None:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                log_rag_event("ERROR", "OPENAI_API_KEY not found in environment variables")
-                raise ValueError("OPENAI_API_KEY not found in environment variables")
-            # AsyncOpenAI reads api_key from env implicitly, but pass explicitly for clarity
-            self._client = AsyncOpenAI(api_key=api_key)
-        return self._client
+        Args:
+            generation_service: Service used to generate expected answers.
+            evaluation_service: Service used to perform LLM-as-judge.
+            expected_model: Model to use for expected answers (when generation provider is OpenAI).
+            judge_provider: Provider key for the judge (e.g., 'openai' or 'ionos').
+        """
+        self._gen = generation_service
+        self._eval = evaluation_service
+        self.expected_model = expected_model or os.getenv("LEVELAPP_EXPECTED_MODEL", "gpt-4o-mini")
+        self.judge_provider = (judge_provider or os.getenv("LEVELAPP_JUDGE_PROVIDER", "openai")).lower()
+
+    def _ensure_gen(self) -> None:
+        if self._gen is None:
+            raise ValueError("GenerationService not set for RAGEvaluator")
+    
+    def _ensure_eval(self) -> None:
+        if self._eval is None:
+            raise ValueError("EvaluationService not set for RAGEvaluator")
         
     async def generate_expected_answer(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -47,30 +50,17 @@ class RAGEvaluator:
         Returns:
             Generated expected answer
         """
-        log_rag_event("INFO", "Generating expected answer with OpenAI")
-        
+        log_rag_event("INFO", "Generating expected answer")
+        self._ensure_gen()
+        # Log a safe prompt preview
         try:
-            client = self._get_openai_client()
-            # Log a safe prompt preview
-            try:
-                preview = messages[-1]["content"][:400] if messages else ""
-                log_rag_event("INFO", f"EXPECTED_ANSWER_CALL model={self.expected_model}, preview={preview}...")
-            except Exception:
-                pass
-
-            response = await client.chat.completions.create(
-                model=self.expected_model,
-                messages=messages,
-                temperature=0.0,
-                max_tokens=512,
-            )
-            text = (response.choices[0].message.content or "").strip()
-            finish = getattr(response.choices[0], "finish_reason", "unknown")
-            log_rag_event("INFO", f"EXPECTED_ANSWER_RESPONSE finish_reason={finish}, length={len(text)}")
-            return text
-        except Exception as e:
-            log_rag_event("ERROR", f"Failed to generate expected answer: {e}")
-            raise
+            preview = messages[-1]["content"][:400] if messages else ""
+            log_rag_event("INFO", f"EXPECTED_ANSWER_CALL model={self.expected_model}, preview={preview}...")
+        except Exception:
+            pass
+        text = await self._gen.generate(provider="openai", messages=messages, model=self.expected_model)
+        log_rag_event("INFO", f"EXPECTED_ANSWER_RESPONSE length={len(text)}")
+        return text
     
     async def compute_metrics(self, expected: str, actual: str) -> RAGMetrics:
         """
@@ -109,18 +99,18 @@ class RAGEvaluator:
             overlap = len(ref_tokens & cand_tokens)
             meteor = 2 * overlap / (len(ref_tokens) + len(cand_tokens)) if (ref_tokens and cand_tokens) else 0.0
         
-        # BERTScore - always set to 0.0 for now
+        # BERTScore - placeholders for now
         bertscore_precision = 0.0
         bertscore_recall = 0.0
         bertscore_f1 = 0.0
-        
+
         return RAGMetrics(
             bleu_score=bleu,
             rouge_l_f1=rouge_l_f1,
-            meteor_score=meteor
-            # bertscore_precision=bertscore_precision,
-            # bertscore_recall=bertscore_recall,
-            # bertscore_f1=bertscore_f1
+            meteor_score=meteor,
+            bertscore_precision=bertscore_precision,
+            bertscore_recall=bertscore_recall,
+            bertscore_f1=bertscore_f1,
         )
     
     def _compute_rouge_l(self, reference: str, hypothesis: str) -> float:
@@ -207,40 +197,34 @@ Respond with only the JSON object.
 """
         
         try:
-            client = self._get_openai_client()
-            response = await client.chat.completions.create(
-                model=self.expected_model,
-                messages=[
-                    {"role": "system", "content": judge_system},
-                    {"role": "user", "content": judge_user}
-                ],
-                temperature=0.0,
-                max_tokens=512,
+            self._ensure_eval()
+            # Delegate to EvaluationService using configured judge_provider
+            res = await self._eval.evaluate_response(
+                provider=self.judge_provider, output_text=actual, reference_text=expected
             )
-            
-            raw_response = response.choices[0].message.content.strip()
-            
-            # Parse JSON response
-            import json
-            try:
-                verdict = json.loads(raw_response)
-                return LLMComparison(
-                    better_answer=verdict.get("better_answer", "tie"),
-                    justification=verdict.get("justification", ""),
-                    missing_facts=verdict.get("missing_facts", [])
-                )
-            except json.JSONDecodeError:
-                log_rag_event("ERROR", f"Invalid JSON from LLM: {raw_response}")
-                return LLMComparison(
-                    better_answer="tie",
-                    justification=f"LLM comparison failed. Raw response: {raw_response}",
-                    missing_facts=[]
-                )
-                
+            # Map to LLMComparison; thresholded interpretation:
+            #  - score >= 4: chatbot answer is strong
+            #  - score == 3: tie
+            #  - score < 3: expected is better
+            score = getattr(res, "match_level", 0)
+            if score >= 4:
+                better = "chatbot"
+            elif score == 3:
+                better = "tie"
+            else:
+                better = "expected"
+            # missing_facts are not yet produced by evaluators; return explicit marker
+            return LLMComparison(
+                better_answer=better,
+                justification=res.justification or "",
+                missing_facts=["No missing facts extracted by judge"]
+                if better != "chatbot" and not getattr(res, "metadata", {}).get("missing_facts")
+                else getattr(res, "metadata", {}).get("missing_facts", []),
+            )
         except Exception as e:
             log_rag_event("ERROR", f"LLM comparison failed: {e}")
             return LLMComparison(
                 better_answer="tie",
                 justification=f"LLM comparison error: {str(e)}",
-                missing_facts=[]
+                missing_facts=[],
             )

@@ -11,9 +11,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Debug: Print what API key is loaded
-api_key = os.getenv("OPENAI_API_KEY")
-print(f"DEBUG: RAG Routes - API Key loaded: {api_key[:20]}..." if api_key else "DEBUG: RAG Routes - No API key found!")
+# Removed debug printing of API keys for logging hygiene
 
 from level_core.simluators.rag_schemas import (
     RAGInitRequest, RAGInitResponse, ChunkSelectionRequest,
@@ -21,6 +19,8 @@ from level_core.simluators.rag_schemas import (
 )
 from level_core.simluators.rag_simulator import RAGSimulator
 from level_core.evaluators.service import EvaluationService
+from level_core.generators.service import GenerationService, GenerationConfig
+from level_core.evaluators.schemas import EvaluationConfig
 from level_core.simluators.event_collector import log_rag_event
 
 # Initialize router
@@ -32,25 +32,46 @@ _SINGLETON_SIMULATOR = None
 
 # Configuration from environment
 def get_config():
-    """Get configuration from environment variables."""
+    """Get default configuration from environment variables.
+
+    Note: The /rag/init endpoint requires a chatbot_base_url in the request.
+    These env values act as developer defaults and are used only when explicitly
+    passed through by the client or for local tooling.
+    """
     config = {
-    # Base URL for chatbot (no trailing slash)
-    "chatbot_base_url": os.getenv("CHATBOT_BASE_URL", os.getenv("CHATBOT_ENDPOINT", "http://localhost:8000")),
-    # Path for chat endpoint (leading slash); default to root to match your chatbot
-    "chatbot_chat_path": os.getenv("CHATBOT_CHAT_PATH", "/"),
+        # Default base URL for chatbot (no trailing slash). Can be overridden by request.
+        "chatbot_base_url": os.getenv("CHATBOT_BASE_URL", os.getenv("CHATBOT_ENDPOINT", "http://localhost:8000")),
+        # Default path for chat endpoint (leading slash). Can be overridden by request.
+        "chatbot_chat_path": os.getenv("CHATBOT_CHAT_PATH", "/"),
         "openai_api_key": os.getenv("OPENAI_API_KEY"),
         "ionos_api_key": os.getenv("IONOS_API_KEY")
     }
-    print(f"DEBUG: Config loaded - OpenAI key: {config['openai_api_key'][:20]}..." if config['openai_api_key'] else "DEBUG: Config - No OpenAI key!")
+    # Avoid logging API keys or prefixes to prevent leakage
     return config
 
-def get_evaluation_service():
-    """Get evaluation service instance."""
+def get_evaluation_service(config: Dict[str, str] = Depends(get_config)):
+    """Get evaluation service instance with provider configs."""
     from logging import Logger
-    return EvaluationService(logger=Logger("RAGEvaluation"))
+    svc = EvaluationService(logger=Logger("RAGEvaluation"))
+    # Configure OpenAI if key present
+    if config.get("openai_api_key"):
+        svc.set_config("openai", EvaluationConfig(api_key=config["openai_api_key"], model_id="gpt-4o-mini"))
+    # Configure IONOS if key present
+    if config.get("ionos_api_key"):
+        svc.set_config("ionos", EvaluationConfig(api_key=config["ionos_api_key"], api_url=os.getenv("IONOS_API_URL", "https://api.ionos.ai"), model_id=os.getenv("IONOS_MODEL_ID", "")))
+    return svc
+
+def get_generation_service(config: Dict[str, str] = Depends(get_config)):
+    """Get generation service instance with provider configs."""
+    from logging import Logger
+    gsvc = GenerationService(logger=Logger("RAGGeneration"))
+    if config.get("openai_api_key"):
+        gsvc.set_config("openai", GenerationConfig(api_key=config["openai_api_key"], model_id=os.getenv("LEVELAPP_EXPECTED_MODEL", "gpt-4o-mini")))
+    return gsvc
 
 def get_rag_simulator(config: Dict[str, str] = Depends(get_config), 
-                     evaluation_service: EvaluationService = Depends(get_evaluation_service)) -> RAGSimulator:
+                     evaluation_service: EvaluationService = Depends(get_evaluation_service),
+                     generation_service: GenerationService = Depends(get_generation_service)) -> RAGSimulator:
     """Get singleton RAG simulator instance."""
     global _SINGLETON_SIMULATOR
     
@@ -58,6 +79,7 @@ def get_rag_simulator(config: Dict[str, str] = Depends(get_config),
         headers = {"Content-Type": "application/json"}
         _SINGLETON_SIMULATOR = RAGSimulator(
             evaluation_service,
+            generation_service,
             endpoint_base=config["chatbot_base_url"].rstrip("/"),
             chat_path=config["chatbot_chat_path"] if config["chatbot_chat_path"].startswith("/") else f"/{config['chatbot_chat_path']}",
             headers=headers,

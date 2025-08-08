@@ -26,22 +26,28 @@ class RAGSimulator:
     Includes session management and improved efficiency.
     """
     
-    def __init__(self, evaluation_service, endpoint_base: str, chat_path: str, headers: Dict[str, str]):
+    def __init__(self, evaluation_service, generation_service, endpoint_base: str, chat_path: str, headers: Dict[str, str]):
         """
         Initialize RAG simulator.
-        
+
         Args:
             evaluation_service: Service for evaluation operations
+            generation_service: Service for expected answer generation
             endpoint_base: Chatbot base URL (e.g., http://localhost:8000)
             chat_path: Chat path (e.g., /chat)
             headers: HTTP headers for API calls
         """
         self.evaluation_service = evaluation_service
+        self.generation_service = generation_service
         self.endpoint_base = endpoint_base.rstrip("/")
         self.chat_path = chat_path if chat_path.startswith("/") else f"/{chat_path}"
         self.headers = headers
-        self.rag_evaluator = RAGEvaluator()
-        
+        # RAGEvaluator now depends on services for generation and judge
+        self.rag_evaluator = RAGEvaluator(
+            generation_service=self.generation_service,
+            evaluation_service=self.evaluation_service,
+        )
+
         # Session storage will be set externally
         self.sessions = {}
 
@@ -96,12 +102,17 @@ class RAGSimulator:
         session_id_str = str(session_id)  # Convert to string immediately
         log_rag_event("INFO", f"Starting RAG initialization and scraping for: {request.page_url}")
         
-        # Initialize RAG system
+        # Determine endpoint base and chat path (allow request overrides)
+        endpoint_base = (request.chatbot_base_url or self.endpoint_base).rstrip("/")
+        chat_path = request.chatbot_chat_path if getattr(request, "chatbot_chat_path", None) else self.chat_path
+        chat_path = chat_path if chat_path.startswith("/") else f"/{chat_path}"
+
+        # Initialize RAG system at provided/derived endpoint
         init_payload = {"page_url": request.page_url}
         init_headers = {**self.headers, "x-model-id": request.model_id}
         
         init_response = await async_request(
-            url=f"{self.endpoint_base}/init",
+            url=f"{endpoint_base}/init",
             headers=init_headers,
             payload=init_payload
         )
@@ -118,6 +129,9 @@ class RAGSimulator:
             "chunks": scraped_chunks,
             "chunk_size": request.chunk_size,
             "model_id": request.model_id,
+            # Persist per-session endpoint config
+            "endpoint_base": endpoint_base,
+            "chat_path": chat_path,
             "created_at": datetime.now().isoformat()
         }
         
@@ -224,9 +238,18 @@ class RAGSimulator:
         except Exception:
             pass
 
-        # Build messages with a single CONTEXT + QUESTION prompt and call OpenAI
+        # Build messages with a single CONTEXT + QUESTION prompt
         messages = self._build_expected_answer_messages(selected_chunks, request.prompt)
-        expected_answer = await self.rag_evaluator.generate_expected_answer(messages)
+        # Allow caller to override the model used for the golden answer (optional)
+        if getattr(request, "expected_model", None):
+            temp_eval = RAGEvaluator(
+                generation_service=self.generation_service,
+                evaluation_service=self.evaluation_service,
+                expected_model=request.expected_model,
+            )
+            expected_answer = await temp_eval.generate_expected_answer(messages)
+        else:
+            expected_answer = await self.rag_evaluator.generate_expected_answer(messages)
         # Retry once with a gentler instruction if we hit the strict fallback
         if expected_answer.strip() == "Not found in the provided context." and selected_chunks:
             log_rag_event("INFO", "Fallback triggered; retrying expected answer with summarization prompt")
@@ -250,7 +273,15 @@ class RAGSimulator:
                     ),
                 },
             ]
-            expected_answer = await self.rag_evaluator.generate_expected_answer(alt_messages)
+            if getattr(request, "expected_model", None):
+                temp_eval = RAGEvaluator(
+                    generation_service=self.generation_service,
+                    evaluation_service=self.evaluation_service,
+                    expected_model=request.expected_model,
+                )
+                expected_answer = await temp_eval.generate_expected_answer(alt_messages)
+            else:
+                expected_answer = await self.rag_evaluator.generate_expected_answer(alt_messages)
         
         # Store in session for later use
         self.sessions[session_id]["expected_answer"] = expected_answer
@@ -288,7 +319,12 @@ class RAGSimulator:
         
         # Query chatbot automatically
         t0 = time.time()
-        chatbot_answer = await self._query_chatbot(request.prompt, session_data["model_id"])
+        chatbot_answer = await self._query_chatbot(
+            request.prompt,
+            session_data["model_id"],
+            session_data.get("endpoint_base", self.endpoint_base),
+            session_data.get("chat_path", self.chat_path),
+        )
         t1 = time.time()
         
         # Store chatbot answer in session
@@ -337,8 +373,19 @@ class RAGSimulator:
         
         log_rag_event("INFO", "RAG evaluation completed successfully")
         return result
+
+    def cleanup_session(self, session_id: UUID) -> bool:
+        """Remove a session and its data if present."""
+        sid = str(session_id)
+        if sid in self.sessions:
+            try:
+                del self.sessions[sid]
+                return True
+            except Exception:
+                return False
+        return False
     
-    async def _query_chatbot(self, prompt: str, model_id: str) -> str:
+    async def _query_chatbot(self, prompt: str, model_id: str, endpoint_base: str, chat_path: str) -> str:
         """
         Query the chatbot and get response.
         
@@ -350,10 +397,12 @@ class RAGSimulator:
             Chatbot response
         """
         log_rag_event("INFO", f"Querying chatbot with prompt: {prompt[:50]}...")
-        
+
         payload = {"prompt": prompt}
         headers = {**self.headers, "x-model-id": model_id}
-        primary_url = f"{self.endpoint_base}{self.chat_path}"
+        eb = endpoint_base.rstrip("/")
+        cp = chat_path if chat_path.startswith("/") else f"/{chat_path}"
+        primary_url = f"{eb}{cp}"
         log_rag_event("INFO", f"Chatbot POST URL: {primary_url} | x-model-id={model_id}")
 
         response = await async_request(
@@ -363,8 +412,8 @@ class RAGSimulator:
         )
 
         # Fallback: if configured path fails, retry at base root
-        if (not response or response.status_code != 200) and self.chat_path != "/":
-            fallback_url = f"{self.endpoint_base}/"
+        if (not response or response.status_code != 200) and cp != "/":
+            fallback_url = f"{eb}/"
             log_rag_event("WARN", f"Primary chat URL failed; retrying at {fallback_url}")
             response = await async_request(
                 url=fallback_url,
@@ -374,9 +423,9 @@ class RAGSimulator:
 
         if not response or response.status_code != 200:
             raise Exception(f"Chatbot query failed: {response.status_code if response else 'No response'}")
-            
+
         chatbot_answer = response.text if isinstance(response.text, str) else response.json().get("response", "")
-        
+
         log_rag_event("INFO", "Chatbot response received")
         return chatbot_answer
     

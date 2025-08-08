@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID, uuid4
 from enum import Enum
+from level_core.entities.metric import RAGMetrics, LLMComparison
 
 class RAGInitRequest(BaseModel):
     """Request to initialize RAG system and scrape page"""
@@ -10,6 +11,14 @@ class RAGInitRequest(BaseModel):
     page_url: str = Field(..., description="URL to scrape and index")
     model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID for headers")
     chunk_size: int = Field(default=500, description="Chunk size to match chatbot's chunker")
+    chatbot_base_url: str = Field(
+        ...,
+        description="Chatbot base URL (e.g., http://localhost:8000). Required to query the user's chatbot."
+    )
+    chatbot_chat_path: Optional[str] = Field(
+        default=None,
+        description="Optional chatbot chat path (e.g., / or /chat). Overrides environment if provided."
+    )
 
 class ChunkInfo(BaseModel):
     """Represents a single chunk with metadata"""
@@ -33,6 +42,7 @@ class ChunkSelectionRequest(BaseModel):
     prompt: str = Field(..., description="User's original question")
     manual_order: List[int] = Field(..., description="Human-selected chunk indices")
     model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID")
+    expected_model: Optional[str] = Field(default=None, description="LLM to generate the expected (golden) answer")
 
 class ExpectedAnswerResponse(BaseModel):
     """Generated expected answer with option for human editing"""
@@ -49,20 +59,7 @@ class RAGEvaluationRequest(BaseModel):
     expected_answer: str = Field(..., description="Human-confirmed expected answer")
     model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID")
 
-class RAGMetrics(BaseModel):
-    """Computed NLP metrics for RAG evaluation"""
-    bleu_score: float = Field(..., description="BLEU score (0-1)")
-    rouge_l_f1: float = Field(..., description="ROUGE-L F1 score (0-1)")
-    meteor_score: float = Field(..., description="METEOR score (0-1)")
-    bertscore_precision: float = Field(..., description="BERTScore precision")
-    bertscore_recall: float = Field(..., description="BERTScore recall")
-    bertscore_f1: float = Field(..., description="BERTScore F1")
-
-class LLMComparison(BaseModel):
-    """LLM-as-judge comparison result"""
-    better_answer: str = Field(..., description="'expected', 'chatbot', or 'tie'")
-    justification: str = Field(..., description="Detailed explanation with missing facts")
-    missing_facts: List[str] = Field(default_factory=list, description="List of missing factual statements")
+## RAGMetrics and LLMComparison now defined in entities.metric and imported above
 
 class RAGEvaluationResult(BaseModel):
     """Complete RAG evaluation result"""

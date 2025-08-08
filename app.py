@@ -136,54 +136,13 @@ async def main_evaluate(request: MainEvaluationRequest):
         # Run the batch test (this is the main work)
         results = await simulator.run_batch_test(
             name=request.test_name,
-            test_load={}, 
-            attempts=request.attempts
+            test_load={},
+            attempts=request.attempts,
         )
-        
-        # Convert results to JSON-serializable format
-        import uuid
-        from enum import Enum
-        from types import MappingProxyType
-
-        def convert_uuid_to_str(obj):
-            """Recursively convert objects to JSON-serializable format"""
-            import uuid
-            from types import MappingProxyType
-            from enum import Enum
-
-            if isinstance(obj, uuid.UUID):
-                return str(obj)
-            elif isinstance(obj, Enum):                             
-                return obj.value
-            elif isinstance(obj, MappingProxyType):
-                return dict(obj)
-            elif isinstance(obj, dict):
-                return {key: convert_uuid_to_str(value) for key, value in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_uuid_to_str(item) for item in obj]
-            elif isinstance(obj, tuple):
-                return [convert_uuid_to_str(item) for item in obj]
-            elif hasattr(obj, '__dict__'):
-                return convert_uuid_to_str(obj.__dict__)
-            elif hasattr(obj, 'model_dump'):                         
-                return convert_uuid_to_str(obj.model_dump())
-            else:
-<<<<<<< Updated upstream
-                return obj
-        
+        # Convert results to JSON-serializable format using FastAPI encoder
         from fastapi.encoders import jsonable_encoder
         serializable_results = jsonable_encoder(results)
 
-=======
-                try:                                                
-                    return dict(obj)
-                except:
-                    return str(obj)
-
-
-        serializable_results = convert_uuid_to_str(results)
->>>>>>> Stashed changes
-        
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -192,16 +151,16 @@ async def main_evaluate(request: MainEvaluationRequest):
                 "endpoint": request.endpoint,
                 "model_id": request.model_id,
                 "attempts": request.attempts,
-                "results": serializable_results
-            }
+                "results": serializable_results,
+            },
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Evaluation failed: {str(e)}"
+            detail=f"Evaluation failed: {str(e)}",
         )
 
 
