@@ -133,3 +133,52 @@ def evaluate_metadata(expected: Dict[str, Any], actual: Dict[str, Any], field_ty
     # Comparing values based on dynamic field types
     scores = [compare_values(field_types.get(f, "string"), expected[f], actual.get(f)) for f in relevant]
     return sum(scores) / len(scores)
+
+
+# ---------------- Key Point Extraction (Heuristic) ---------------- #
+def extract_key_point(text: str, max_words: int = 20) -> str:
+    """Generate a concise one-line key point heuristic summary.
+
+    Heuristics (fast, no external heavy NLP libs):
+    1. Normalize whitespace and strip.
+    2. If short enough already, return truncated to max_words.
+    3. Split into sentences (., !, ?). Take the first non-trivial sentence.
+    4. Tokenize words, remove very common stopwords, keep order of appearance of informative tokens.
+    5. Reconstruct up to max_words; fall back to original snippet if filtering over-prunes.
+    """
+    if not text:
+        return ""
+    original = " ".join(text.strip().split())
+    if not original:
+        return ""
+
+    # Early exit for very short strings
+    words = original.split()
+    if len(words) <= max_words:
+        return original
+
+    # Sentence segmentation (simple)
+    import re as _re
+    sentences = [s.strip() for s in _re.split(r'[.!?]\s+', original) if s.strip()]
+    candidate = sentences[0] if sentences else original
+
+    # Basic stopword list
+    stop = {
+        'the','a','an','of','to','and','or','in','on','for','with','is','are','was','were','be','this','that','it','as','by','at','from','your','you','i'
+    }
+    tokens = [t for t in _re.split(r'[^A-Za-z0-9_-]+', candidate) if t]
+    filtered = []
+    seen = set()
+    for t in tokens:
+        lt = t.lower()
+        if lt in stop or len(lt) < 2:
+            continue
+        if lt in seen:
+            continue
+        seen.add(lt)
+        filtered.append(t)
+
+    # If filtering removed too much, fall back to original first sentence
+    base_tokens = filtered if len(filtered) >= 4 else tokens
+    summary = " ".join(base_tokens[:max_words])
+    return summary

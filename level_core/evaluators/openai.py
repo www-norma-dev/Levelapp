@@ -4,7 +4,7 @@
 Uses LangChain with OpenAI's function-calling and structured output to evaluate
 the quality of generated vs expected text using a predefined rubric.
 """
-from typing import Union, Dict
+from typing import Union, Dict, Optional
 from logging import Logger
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -32,90 +32,51 @@ class OpenAIEvaluator(BaseEvaluator):
         self.ChatPromptTemplate = ChatPromptTemplate
         self.ChatOpenAI = ChatOpenAI
 
-    def build_prompt(self, generated_text: str, expected_text: str) -> str:
-        """
-        Construct a human-readable scoring rubric prompt for the OpenAI model.
-
-        Returns:
-            str: Evaluation prompt text.
-        """
-        return f"""
-        You are an expert text evaluator. Your task is to evaluate how well the agent's generated text matches the expected text using semantic similarity, factual accuracy, and completeness.
-
-        Use this exact 6-point scale (0-5):
-
-        5 - Perfect Match: Generated text is semantically identical to expected text. All key information, meaning, and intent are preserved with only trivial differences (punctuation, minor word order).
-
-        4 - Excellent Match: Generated text captures all essential meaning and information with minor stylistic differences. No important details are missing or incorrect.
-
-        3 - Good Match: Generated text covers the main points accurately but may have some minor omissions, slight inaccuracies, or different phrasing that doesn't change core meaning.
-
-        2 - Moderate Match: Generated text captures the general idea but has noticeable differences, missing details, or minor factual errors that somewhat impact accuracy.
-
-        1 - Poor Match: Generated text addresses the topic but has significant omissions, factual errors, or substantially different meaning from expected text.
-
-        0 - No Match: Generated text is completely unrelated, factually incorrect, or fails to address the expected content meaningfully.
-
-        Expected Output:
-        \"\"\"
-        {expected_text}
-        \"\"\"
-
-        Agent's Generated Output:
-        \"\"\"
-        {generated_text}
-        \"\"\"
-
-        Evaluation Instructions:
-        - Focus on semantic meaning rather than exact word matching
-        - Consider whether someone reading the generated text would get the same information as from the expected text
-        - Penalize factual inaccuracies more heavily than stylistic differences
-        - Be consistent in your scoring across similar cases
-
-        Return your evaluation as a valid JSON object with exactly these keys:
-        {{"match_level": <integer from 0 to 5>, "justification": "<brief explanation of score reasoning>"}}
-
-        Output only the JSON object and nothing else.
-        """
+    def build_prompt(self, user_message: Optional[str], generated_text: str, expected_text: str) -> str:
+        """Simplified evaluation prompt (heuristic key points handled outside)."""
+        user_msg = user_message or "(no user message provided)"
+        parts = [
+            "You are an expert text evaluator. Score generated vs expected for semantic similarity, factual accuracy, completeness.",
+            "Provide only JSON: {\"match_level\": <0-5>, \"justification\": \"<<=35 words reason>\", \"metadata\": {}}",
+            "Scale: 5 perfect; 4 excellent; 3 good; 2 moderate gaps; 1 poor; 0 no match/incorrect.",
+            "",
+            "User Message:", '"""', user_msg, '"""',
+            "",
+            "Expected:", '"""', expected_text, '"""',
+            "",
+            "Generated:", '"""', generated_text, '"""',
+        ]
+        return "\n".join(parts)
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def call_llm(self, prompt: str) -> Union[Dict, str]:
-        """
-        Send evaluation prompt to OpenAI via LangChain with structured function-calling.
-
-        Args:
-            prompt (str): The full scoring prompt.
-
-        Returns:
-            Union[Dict, str]: A dictionary containing match_level, justification, and token metadata.
-                              Returns a string on failure.
-        """
-        messages = [
-            self.SystemMessage(content="You are an evaluation assistant."),
-            self.HumanMessage(content=prompt)
-        ]
-        prompt_template = self.ChatPromptTemplate.from_messages(messages=messages)
-
-        llm = self.ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0,
-            api_key=self.config.api_key,
-        )
-        structured_llm = llm.with_structured_output(schema=EvaluationResult, method="function_calling")
-
+        """Send evaluation prompt and return structured result with token + key point metadata."""
         try:
-            with get_openai_callback() as cb:
-                chain = prompt_template | structured_llm
-                response = await chain.ainvoke({})
+            messages = [
+                self.SystemMessage(content="You are an evaluation assistant."),
+                self.HumanMessage(content=prompt)
+            ]
+            prompt_template = self.ChatPromptTemplate.from_messages(messages=messages)
 
-                response.metadata = {
+            llm = self.ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            with get_openai_callback() as cb:
+                chain = prompt_template | llm
+                raw = await chain.ainvoke({})
+                # Fallback heuristic: we expect model text output containing JSON
+                content = getattr(raw, 'content', '') if raw else ''
+                parsed = self._parse_json_output(content) if content else {}
+                meta = {
                     "inputTokens": cb.prompt_tokens,
                     "outputTokens": cb.completion_tokens,
-                    "total_cost": cb.total_cost
+                    "total_cost": cb.total_cost,
                 }
-
-                return response.model_dump()
-
-        except Exception as e:
-            self.logger.error(f"[call_llm] OpenAI API request failed: {e}", exc_info=True)
-        return {"error": "API request failed", "details": str(e)}
+                if isinstance(parsed, dict):
+                    parsed.setdefault("metadata", {})
+                    if isinstance(parsed["metadata"], dict):
+                        parsed["metadata"].update(meta)
+                else:
+                    parsed = {"match_level": 0, "justification": "Non-JSON output", "metadata": meta}
+                return parsed
+        except Exception as ex:
+            self.logger.error(f"[call_llm] OpenAI API request failed: {ex}", exc_info=True)
+            return {"error": "API request failed", "details": str(ex)}

@@ -10,7 +10,7 @@ import json
 
 from abc import ABC, abstractmethod
 from logging import Logger
-from typing import Union, Dict
+from typing import Union, Dict, Optional
 
 from tenacity import stop_after_attempt, wait_exponential, retry
 
@@ -31,7 +31,7 @@ class BaseEvaluator(ABC):
         self.logger = logger
 
     @abstractmethod
-    def build_prompt(self, generated_text: str, expected_text: str) -> str:
+    def build_prompt(self, user_message: Optional[str], generated_text: str, expected_text: str) -> str:
         """
         Construct a prompt to send to the LLM for evaluation.
 
@@ -83,20 +83,20 @@ class BaseEvaluator(ABC):
             return {"error": "Invalid JSON output"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
-    async def evaluate(self, generated_text: str, expected_text: str) -> EvaluationResult:
-        """
-        Evaluate generated text against expected text using an LLM.
+    async def evaluate(self, generated_text: str, expected_text: str, user_message: Optional[str] = None) -> EvaluationResult:
+        """Evaluate generated text against expected text using an LLM.
 
         Handles retry logic and fallback parsing for robustness.
 
         Args:
             generated_text (str): The model-generated response.
             expected_text (str): The expected or reference response.
+            user_message (Optional[str]): Original user input (for context / key point extraction).
 
         Returns:
             EvaluationResult: Structured result of the evaluation.
         """
-        prompt = self.build_prompt(generated_text, expected_text)
+        prompt = self.build_prompt(user_message=user_message, generated_text=generated_text, expected_text=expected_text)
         response = await self.call_llm(prompt)
 
         if isinstance(response, dict):
