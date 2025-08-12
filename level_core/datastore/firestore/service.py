@@ -33,20 +33,19 @@ logger = logging.getLogger("batch-test")
 
 
 class FirestoreService(BaseDatastore):
-    def __init__(self, credentials_path: str = None):
+    def __init__(self, config: dict = None, credentials_path: str = None):
         """
         Args:
-            credentials_path (str): Path to service account JSON key file.
+            config (dict): Database configuration from YAML with project_id
+            credentials_path (str): credentials file path for Google Cloud authentication.
         """
         if credentials_path:
             self._firestore_client = firestore.Client.from_service_account_json(credentials_path)
+            self._storage_client = storage.Client.from_service_account_json(credentials_path)
         else:
-            self._firestore_client = firestore.Client()
-
-        self._storage_client = storage.Client()
-
-        from google.auth import default
-        creds, project = default()
+            project_id = config.get("project_id") if config else None
+            self._firestore_client = firestore.Client(project=project_id)
+            self._storage_client = storage.Client(project=project_id)
 
 
     @staticmethod

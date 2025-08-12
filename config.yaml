@@ -1,0 +1,3 @@
+database:
+  type: firestore
+  project_id: levelapp-dev-90113
