@@ -2,20 +2,24 @@
 'firestore/service.py': FirestoreService handles interactions with Firestore to fetch and parse scenario data.
 """
 import logging
-from typing import List, Dict, Any, Type
+from typing import List, Dict, Any, Type, Optional
 
-from firebase_admin import App, firestore
-from google.cloud import storage
+from google.cloud import storage, firestore
 from google.cloud.firestore_v1 import DocumentReference, DocumentSnapshot, SERVER_TIMESTAMP
 
 from pydantic import ValidationError, BaseModel
 from werkzeug.exceptions import InternalServerError, ServiceUnavailable, HTTPException
 from google.api_core.exceptions import GoogleAPIError, NotFound
+from pathlib import Path
 
 from .schemas import ScenarioBatch, ExtractionBundle, DocType
-
-from .config import DEFAULT_SCENARIO_FIELD  
-from .paths import get_document_path, get_results_path, store_extracted_data_path, save_batch_results_path  
+from .config import (
+    USERS_COLLECTION,
+    PROJECTS_COLLECTION,
+    EXTRACTION_COLLECTION,
+    MULTIAGENT_COLLECTION,
+    DEFAULT_SCENARIO_FIELD,
+)
 from ..base import BaseDatastore
 from .exceptions import FirestoreServiceError
 
@@ -33,16 +37,60 @@ logger = logging.getLogger("batch-test")
 
 
 class FirestoreService(BaseDatastore):
-    """Service layer to manage Firestore interactions and orchestrate scenario data fetching."""
-    def __init__(self, app: App = None):
-        """
-        Args:
-            app (App): Firestore app object.
-        """
-        self._app = app
-        self._firestore_client = firestore.client(app=self._app)
-        self._storage_client = storage.Client(project=self._app.project_id)
+    def __init__(self, config: Optional[Dict] = None, credentials_path: Optional[str] = None):
+        """Initialize Firestore/Storage.
 
+        Use exactly one:
+        - ADC -> pass `config` as the **database block** (e.g. {"type":"firestore","project_id":"..."}).
+        - Service account → pass `credentials_path` (path to JSON).
+        """
+        if bool(config) == bool(credentials_path):
+            raise ValueError("Provide exactly one of `config` (ADC) or `credentials_path`.")
+
+        if config:
+            project_id = config.get("project_id")
+            if not project_id:
+                raise ValueError("`project_id` is required in config for ADC.")
+            self._firestore_client = firestore.Client(project=project_id)
+            self._storage_client = storage.Client(project=project_id)
+            return
+
+        p = Path(credentials_path)
+        if not p.exists():
+            raise FileNotFoundError(f"Service-account key not found: {p}")
+        self._firestore_client = firestore.Client.from_service_account_json(str(p))
+        self._storage_client = storage.Client.from_service_account_json(str(p))
+
+
+    def _get_document_path(self, user_id: str, collection_id: str, document_id: str) -> DocumentReference:
+        """Get document reference for a user's collection document"""
+        return self._firestore_client.collection(USERS_COLLECTION).document(user_id).collection(collection_id).document(document_id)
+
+    def _get_results_path(self, user_id: str, collection_id: str, document_id: str, sub_collection: str, sub_document_id: str) -> DocumentReference:
+        """Get document reference for nested collection results """
+        return (
+            self._firestore_client.collection(USERS_COLLECTION)
+            .document(user_id)
+            .collection(collection_id)
+            .document(document_id)
+            .collection(sub_collection)
+            .document(sub_document_id)
+        )
+
+    def _get_extracted_data_path(self, user_id: str, document_id: str) -> DocumentReference:
+        """Get document reference for extracted data storage """
+        return self._firestore_client.collection(USERS_COLLECTION).document(user_id).collection(EXTRACTION_COLLECTION).document(document_id)
+
+    def _get_batch_results_path(self, user_id: str, project_id: str, batch_id: str) -> DocumentReference:
+        """Get document reference for batch test results """
+        return (
+            self._firestore_client.collection(USERS_COLLECTION)
+            .document(user_id)
+            .collection(PROJECTS_COLLECTION)
+            .document(project_id)
+            .collection(MULTIAGENT_COLLECTION)
+            .document(batch_id)
+        )
     @staticmethod
     def parser(doc: DocumentSnapshot, model: Type[BaseModel]) -> BaseModel:
         """
@@ -218,7 +266,7 @@ class FirestoreService(BaseDatastore):
             raise ValueError("Invalid input parameters")
 
         try:
-            doc_ref = get_document_path(user_id=user_id, collection_id=collection_id, document_id=document_id)
+            doc_ref = self._get_document_path(user_id=user_id, collection_id=collection_id, document_id=document_id)
             doc = doc_ref.get()
 
             if not doc.exists:
@@ -235,13 +283,7 @@ class FirestoreService(BaseDatastore):
             logger.error(f"[_fetch_document] Unexpected error while fetching document <ID:{document_id}>: {e}")
             raise FirestoreServiceError(ERROR_MESSAGES["unexpected_error"], cause=e)
 
-    def fetch_document(
-            self,
-            user_id: str,
-            collection_id: str,
-            document_id: str,
-            doc_type: DocType.SCENARIO
-    ) -> BaseModel:
+    def fetch_document(self, user_id: str, collection_id: str, document_id: str, doc_type: DocType.SCENARIO) -> BaseModel:
         """
         Fetch scenario/bundle document for a specific user, collection, and scenario ID.
 
@@ -264,13 +306,11 @@ class FirestoreService(BaseDatastore):
 
             if doc_type == DocType.SCENARIO:
                 return self.parser(doc=doc, model=ScenarioBatch)
-
             elif doc_type == DocType.BUNDLE:
                 return self.parser(doc=doc, model=ExtractionBundle)
-
             else:
                 logger.error(f"[fetch_document] Unexpected document type {doc_type}")
-                raise FirestoreServiceError(ERROR_MESSAGES["invalid_format"], cause=E)
+                raise FirestoreServiceError(ERROR_MESSAGES["invalid_format"])
 
         except NotFound:
             logger.warning(f"[fetch_document] Document not found: {document_id}")
@@ -299,17 +339,16 @@ class FirestoreService(BaseDatastore):
             Dict[str, Any]: Firestore document snapshot.
 
         Raises:
-            Serv
             HTTPException: If the scenario is not found or if there is a Firestore API error.
         """
         try:
             logger.info(f"[fetch_stored_results] Fetching stored results for batch ID: {batch_id}")
-            doc_ref = get_results_path(
+            doc_ref = self._get_results_path(
                 user_id=user_id,
                 collection_id=collection_id,
-                project_id=project_id,
-                category_id=category_id,
-                batch_id=batch_id
+                document_id=project_id,
+                sub_collection=category_id,
+                sub_document_id=batch_id
             )
             doc = doc_ref.get()
 
@@ -327,13 +366,7 @@ class FirestoreService(BaseDatastore):
             logger.error(f"[fetch_stored_results] Unexpected error: {e}")
             raise InternalServerError(description=ERROR_MESSAGES["unexpected_error"])
 
-    def store_extracted_data(
-            self,
-            user_id: str,
-            document_id: str,
-            data: Dict[str, Any],
-            field_name: str = DEFAULT_SCENARIO_FIELD
-    ) -> None:
+    def store_extracted_data(self, user_id: str, document_id: str, data: Dict[str, Any], field_name: str = DEFAULT_SCENARIO_FIELD) -> None:
         """
         Persist extracted data into Firestore under:
         users/{userId}/projects/{projectId}/dataExtraction/{batchId}
@@ -349,27 +382,21 @@ class FirestoreService(BaseDatastore):
             "updatedAt": SERVER_TIMESTAMP
         }
 
-        doc_ref = store_extracted_data_path(self._firestore_client, user_id, document_id)
+        doc_ref = self._get_extracted_data_path(user_id, document_id)
 
         try:
             doc_ref.set(wrapped_data, merge=True)
             logger.info(f"[store_extracted_data] Storing extracted data under ID: {document_id}")
 
         except GoogleAPIError as e:
-            logger.error(f"[save_batch_test_results] Firestore API error: {e}")
+            logger.error(f"[store_extracted_data] Firestore API error: {e}")
             raise ServiceUnavailable(description=ERROR_MESSAGES["gcs_service_unavailable"])
 
         except Exception as e:
-            logger.error(f"[save_batch_test_results] Unexpected error: {e}")
+            logger.error(f"[store_extracted_data] Unexpected error: {e}")
             raise InternalServerError(description=ERROR_MESSAGES["gcs_service_unavailable"])
 
-    def save_batch_test_results(
-            self,
-            user_id: str,
-            project_id: str,
-            batch_id: str,
-            data: Dict[str, Any],
-    ) -> None:
+    def save_batch_test_results(self, user_id: str, project_id: str, batch_id: str, data: Dict[str, Any]) -> None:
         """
         Persist batch test result to Firestore under:
         users/{userId}/projects/{projectId}/batchTestMultiAgent/{batchId}
@@ -380,15 +407,14 @@ class FirestoreService(BaseDatastore):
             batch_id (str): ID of the batch (used as the document ID).
             data (Dict[str, Any]): Batch simulation result data.
         """
-        data["updatedAt"] = SERVER_TIMESTAMP
+        doc_data = dict(data)
+        doc_data["updatedAt"] = SERVER_TIMESTAMP
 
-        doc_ref = save_batch_results_path(self._firestore_client, user_id, project_id, batch_id)
+        doc_ref = self._get_batch_results_path(user_id, project_id, batch_id)
 
         try:
-            doc_ref.set(data, merge=True)
-            logger.info(
-                f"[save_batch_test_results] Merged data into batchId: {batch_id}"
-            )
+            doc_ref.set(doc_data, merge=True)
+            logger.info(f"[save_batch_test_results] Merged data into batchId: {batch_id}")
 
         except GoogleAPIError as e:
             logger.error(f"[save_batch_test_results] Firestore API error: {e}")
