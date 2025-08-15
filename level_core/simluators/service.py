@@ -22,7 +22,13 @@ class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
     """
-    def __init__(self, batch: ConversationBatch, evaluation_service: EvaluationService, persistence_fn: Optional[Callable] = None):
+    def __init__(
+        self,
+        batch: ConversationBatch,
+        evaluation_service: EvaluationService,
+        persistence_fn: Optional[Callable] = None,
+        payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None,
+    ):
         """
         Initialize the ConversationSimulator.
 
@@ -37,18 +43,34 @@ class ConversationSimulator:
         self.collected_scores = defaultdict(list)
         self.evaluation_summaries = defaultdict(list)
         self.execution_events = []  # Collect execution events instead of logging
+        # Adapter used to build the request payload from an interaction
+        # Defaults to {"prompt": interaction.user_message} to preserve current behavior
+        self.payload_adapter: Callable[[Any], Dict[str, Any]] = (
+            payload_adapter if payload_adapter is not None else lambda interaction: {"prompt": getattr(interaction, "user_message", "")}
+        )
 
 
-    def setup_simulator(self, endpoint: str, headers: Dict[str, str]):
+    def setup_simulator(self, endpoint: str, headers: Dict[str, str], payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None):
         """
         Set up the simulator with endpoint and headers.
 
         Args:
             endpoint (str): The endpoint URL for the simulator.
             headers (Dict[str, str]): HTTP headers for requests.
+            payload_adapter (Optional[Callable[[Any], Dict[str, Any]]]): Optional adapter to transform an interaction into a request payload.
         """
         self.endpoint = endpoint
         self.headers = headers
+        if payload_adapter is not None:
+            self.payload_adapter = payload_adapter
+
+    def set_payload_adapter(self, adapter: Callable[[Any], Dict[str, Any]]):
+        """Dynamically set/override the payload adapter.
+
+        Args:
+            adapter: Callable taking an interaction and returning a JSON-serializable dict payload.
+        """
+        self.payload_adapter = adapter
 
     async def run_batch_test(self, name: str, test_load: Dict[str, Any], attempts: int = 1) -> Dict[str, Any]:
         """
@@ -174,7 +196,8 @@ class ConversationSimulator:
         results = []
         interactions_sequence = scenario.interactions
         for interaction in interactions_sequence:
-            payload = {"prompt": interaction.user_message}
+            # Build payload using the configured adapter (generalizes beyond {"prompt": ...})
+            payload = self.payload_adapter(interaction)
             response = await async_request(
                 url=self.endpoint,
                 headers=self.headers,
