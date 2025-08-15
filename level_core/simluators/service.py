@@ -18,39 +18,31 @@ from .event_collector import add_event
 from level_core.simluators.schemas import ConversationBatch
 from level_core.evaluators.service import EvaluationService
 from level_core.evaluators.utils import evaluate_metadata
+from level_core.config.Adapter import EndpointConfig
 class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
     """
-    def __init__(
-        self,
-        batch: ConversationBatch,
-        evaluation_service: EvaluationService,
-        persistence_fn: Optional[Callable] = None,
-        payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None,
-    ):
-        """
-        Initialize the ConversationSimulator.
-
-        Args:
-            batch (ConversationBatch): The batch of scenarios to simulate (user supplies structure).
-            evaluation_fn (Callable): Function to evaluate interactions (user supplies).
-            persistence_fn (Callable): Function to persist results (user supplies).
-        """
+    def __init__(self,
+                 batch: ConversationBatch,
+                 evaluation_service: EvaluationService,
+                 persistence_fn: Optional[Callable] = None,
+                 payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None,
+                 endpoint_configuration: Optional[EndpointConfig] = None):
+        """Initialize the ConversationSimulator."""
         self.batch = batch
-        self.evaluation_service = evaluation_service  # User-supplied evaluation logic
-        self.persistence_fn = persistence_fn  # User-supplied persistence logic
+        self.evaluation_service = evaluation_service
+        self.persistence_fn = persistence_fn
         self.collected_scores = defaultdict(list)
         self.evaluation_summaries = defaultdict(list)
-        self.execution_events = []  # Collect execution events instead of logging
-        # Adapter used to build the request payload from an interaction
-        # Defaults to {"prompt": interaction.user_message} to preserve current behavior
-        self.payload_adapter: Callable[[Any], Dict[str, Any]] = (
-            payload_adapter or (lambda interaction: {"prompt": getattr(interaction, "user_message", "")})
-        )
+        self.execution_events = []
+        # Payload builder; defaults to {"prompt": interaction.user_message}
+        self.payload_adapter = payload_adapter or (lambda interaction: {"prompt": getattr(interaction, "user_message", "")})
+        # Optional EndpointConfig to drive URL/headers/payload
+        self.endpoint_configuration = endpoint_configuration
 
 
-    def setup_simulator(self, endpoint: str, headers: Dict[str, str], payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None):
+    def setup_simulator(self, endpoint: str, headers: Dict[str, str], payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None, endpoint_configuration: Optional[EndpointConfig] = None):
         """
         Set up the simulator with endpoint and headers.
 
@@ -63,6 +55,9 @@ class ConversationSimulator:
         self.headers = headers
         if payload_adapter:
             self.payload_adapter = payload_adapter
+        # When provided, this will be used to build URL/headers/payload per interaction
+        if endpoint_configuration:
+            self.endpoint_configuration = endpoint_configuration
 
     def set_payload_adapter(self, adapter: Callable[[Any], Dict[str, Any]]):
         """Dynamically set/override the payload adapter.
@@ -196,13 +191,29 @@ class ConversationSimulator:
         results = []
         interactions_sequence = scenario.interactions
         for interaction in interactions_sequence:
-            # Build payload using the configured adapter (generalizes beyond {"prompt": ...})
-            payload = self.payload_adapter(interaction)
-            response = await async_request(
-                url=self.endpoint,
-                headers=self.headers,
-                payload=payload,
-            )
+            # If EndpointConfig is set, use it to build the request directly; otherwise, use the adapter + endpoint/headers
+            if self.endpoint_configuration:
+                # Populate variables for the template; provide both keys for convenience
+                user_message = interaction.user_message
+                self.endpoint_configuration.variables = {
+                    "user_message": user_message,
+                    "prompt": user_message,
+                }
+                ec = self.endpoint_configuration
+                payload_val = ec.payload() if callable(ec.payload) else ec.payload
+                payload = dict(payload_val or {"prompt": user_message})
+                response = await async_request(
+                    url=str(ec.full_url() if callable(ec.full_url) else ec.full_url),
+                    headers={str(k): str(v) for k, v in (ec.headers() if callable(ec.headers) else ec.headers or {}).items()},
+                    payload=payload,
+                )
+            else:
+                payload = self.payload_adapter(interaction)
+                response = await async_request(
+                    url=self.endpoint,
+                    headers=self.headers,
+                    payload=payload,
+                )
             if not response or not response.status_code == 200:
                 add_event("ERROR", "Inbound interaction request failed.", {
                     "status_code": response.status_code if response else "No response",
