@@ -46,7 +46,7 @@ class ConversationSimulator:
         # Adapter used to build the request payload from an interaction
         # Defaults to {"prompt": interaction.user_message} to preserve current behavior
         self.payload_adapter: Callable[[Any], Dict[str, Any]] = (
-            payload_adapter if payload_adapter is not None else lambda interaction: {"prompt": getattr(interaction, "user_message", "")}
+            payload_adapter or (lambda interaction: {"prompt": getattr(interaction, "user_message", "")})
         )
 
 
@@ -61,7 +61,7 @@ class ConversationSimulator:
         """
         self.endpoint = endpoint
         self.headers = headers
-        if payload_adapter is not None:
+        if payload_adapter:
             self.payload_adapter = payload_adapter
 
     def set_payload_adapter(self, adapter: Callable[[Any], Dict[str, Any]]):
