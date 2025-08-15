@@ -46,6 +46,14 @@ class EndpointConfig(BaseModel):
     @computed_field
     def payload(self) -> Dict[str, Any]:
         """Return fully prepared payload depending on template or full payload."""
+        # First, check if we don't have a template yet but need to load it
+        if not self.payload_template and self.variables:
+            template_path = os.getenv('PAYLOAD_PATH', '')
+            if template_path:
+                self.load_template(template_path)
+            else:
+                raise ValueError("No payload template provided but variables exist. Use load_template() first.")
+
         if not self.variables:
             # Case 1: Already complete payload
             return self.payload_template
@@ -106,36 +114,3 @@ class EndpointConfig(BaseModel):
 
         except Exception as e:
             raise ValueError(f"[EndpointConfig] Unexpected error loading configuration: {e}")
-
-
-# ---- Minimal, general payload adapter helpers ----
-def make_basic_adapter(message_key: str = "prompt") -> Callable[[Any], Dict[str, Any]]:
-    """Return an adapter that maps interaction.user_message into a single-key payload.
-
-    Args:
-        message_key: The key to use for the message in the payload (default: "prompt").
-
-    Returns:
-        Callable that takes an interaction and returns a dict payload.
-    """
-    def _adapter(interaction: Any) -> Dict[str, Any]:
-        return {message_key: getattr(interaction, "user_message", "")}
-
-    return _adapter
-
-
-def make_template_adapter(payload_template: Dict[str, Any], variables_builder: Callable[[Any], Dict[str, Any]]) -> Callable[[Any], Dict[str, Any]]:
-    """Return an adapter that fills a payload template per interaction using variables_builder.
-
-    Args:
-        payload_template: Dict template with placeholders like "$message" or "${message}".
-        variables_builder: Function that, given an interaction, returns a variables dict for substitution.
-
-    Returns:
-        Callable that takes an interaction and returns the rendered payload.
-    """
-    def _adapter(interaction: Any) -> Dict[str, Any]:
-        variables = variables_builder(interaction)
-        return EndpointConfig._replace_placeholders(payload_template, variables)
-
-    return _adapter
