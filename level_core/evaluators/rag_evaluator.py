@@ -3,15 +3,29 @@ RAG-specific evaluator for retrieval quality assessment.
 Refactored to use GenerationService for expected answers and EvaluationService for judge.
 """
 import os
+import re
 from typing import List, Dict, Optional
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from nltk.translate.meteor_score import meteor_score
+from rouge_score import rouge_scorer
+
+# LangChain imports for evaluation
+from langchain.evaluation import EvaluatorType, load_evaluator
+from langchain_openai import ChatOpenAI
+from langchain_core.outputs import LLMResult
 
 from level_core.entities.metric import RAGMetrics, LLMComparison
 from level_core.simluators.event_collector import log_rag_event
 from level_core.generators.service import GenerationService
 from level_core.evaluators.service import EvaluationService
-from level_core.simluators.constants import JUDGE_STRONG_THRESHOLD, JUDGE_TIE_SCORE
+
+# RAG Evaluation Constants
+JUDGE_STRONG_THRESHOLD = 4  # Score threshold for strong agreement
+JUDGE_TIE_SCORE = 3         # Score indicating neutral/tie result
+
+# Missing facts extraction keywords and pattern
+_MISSING_KEYWORDS = {"missing", "lacks", "absent", "not mentioned", "omits", "excludes"}
+_MISSING_PATTERN = re.compile(r'\b(?:missing|lacks|absent|omits|excludes|not mentioned|fails to mention)\b', re.IGNORECASE)
 
 
 class RAGEvaluator:
@@ -40,6 +54,21 @@ class RAGEvaluator:
     def _ensure_eval(self) -> None:
         if self._eval is None:
             raise ValueError("EvaluationService not set for RAGEvaluator")
+    
+    def _init_llm(self) -> Optional[ChatOpenAI]:
+        """
+        Initialize LLM based on judge provider.
+        
+        Returns:
+            ChatOpenAI instance if OpenAI provider, None otherwise
+        """
+        if self.judge_provider == "openai":
+            return ChatOpenAI(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                model="gpt-4o-mini",
+                temperature=0.1
+            )
+        return None
         
     async def generate_expected_answer(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -76,29 +105,32 @@ class RAGEvaluator:
         """
         log_rag_event("INFO", "Computing NLP metrics")
         
+        # Tokenize once and reuse (optimization)
+        expected_tokens = expected.split()
+        actual_tokens = actual.split()
+        
         # BLEU Score
         smooth = SmoothingFunction().method1
         bleu = sentence_bleu(
-            [expected.split()],
-            actual.split(),
+            [expected_tokens],
+            actual_tokens,
             smoothing_function=smooth
         )
         
-        # ROUGE-L F1
-        rouge_l_f1 = self._compute_rouge_l(expected, actual)
+        # ROUGE-L F1 - use rouge_scorer library
+        scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
+        scores = scorer.score(" ".join(expected_tokens), " ".join(actual_tokens))
+        rouge_l_f1 = scores["rougeL"].fmeasure
         
         # METEOR Score
         try:
-            meteor = meteor_score(
-                [expected.split()],
-                actual.split()
-            )
+            meteor = meteor_score([expected_tokens], actual_tokens)
         except Exception:
-            # Fallback to token overlap
-            ref_tokens = set(expected.split())
-            cand_tokens = set(actual.split())
-            overlap = len(ref_tokens & cand_tokens)
-            meteor = 2 * overlap / (len(ref_tokens) + len(cand_tokens)) if (ref_tokens and cand_tokens) else 0.0
+            # Fallback to token overlap using pre-tokenized data
+            ref_tokens_set = set(expected_tokens)
+            cand_tokens_set = set(actual_tokens)
+            overlap = len(ref_tokens_set & cand_tokens_set)
+            meteor = 2 * overlap / (len(ref_tokens_set) + len(cand_tokens_set)) if (ref_tokens_set and cand_tokens_set) else 0.0
         
         # BERTScore - placeholders for now
         bertscore_precision = 0.0
@@ -114,39 +146,6 @@ class RAGEvaluator:
             bertscore_f1=bertscore_f1,
         )
     
-    def _compute_rouge_l(self, reference: str, hypothesis: str) -> float:
-        """
-        Compute ROUGE-L F1 score (word-level LCS).
-        
-        Args:
-            reference: Reference text
-            hypothesis: Hypothesis text
-            
-        Returns:
-            ROUGE-L F1 score
-        """
-        ref_w = reference.split()
-        hyp_w = hypothesis.split()
-        m, n = len(ref_w), len(hyp_w)
-        
-        # DP table for LCS
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-        for i in range(m):
-            for j in range(n):
-                if ref_w[i] == hyp_w[j]:
-                    dp[i + 1][j + 1] = dp[i][j] + 1
-                else:
-                    dp[i + 1][j + 1] = max(dp[i][j + 1], dp[i + 1][j])
-        
-        lcs_len = dp[m][n]
-        
-        # Precision, Recall, F1
-        prec = lcs_len / n if n > 0 else 0.0
-        rec = lcs_len / m if m > 0 else 0.0
-        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
-        
-        return f1
-    
     async def compare_answers(
         self, 
         prompt: str, 
@@ -154,7 +153,7 @@ class RAGEvaluator:
         actual: str
     ) -> LLMComparison:
         """
-        Use LLM-as-judge to compare expected vs actual answers.
+        Use LangChain's evaluation chain to compare expected vs actual answers.
         
         Args:
             prompt: Original user question
@@ -164,49 +163,96 @@ class RAGEvaluator:
         Returns:
             LLMComparison with judgment and missing facts
         """
-        log_rag_event("INFO", "Performing LLM-as-judge comparison")
+        log_rag_event("INFO", "Performing LangChain evaluation comparison")
         
-        judge_system = "You are an expert evaluator of answer relevance and completeness."
-        judge_user = f"""
-Query:
-"{prompt}"
-
-Expected Answer (human-curated):
-"{expected}"
-
-Chatbot Answer:
-"{actual}"
-
-Compare the two answers and decide which one better addresses the Query in terms of:
-  1. Factual relevance,
-  2. Completeness of information,
-  3. Faithfulness to the source context.
-
-Do NOT output any numeric score. Instead, return a JSON object with these fields:
-  - "better_answer": one of ["expected", "chatbot", "tie"]
-  - "justification": a concise explanation that includes bullet-point lines of any factual statements from the Expected Answer that are missing or incorrect in the Chatbot Answer
-  - "missing_facts": a list of the exact factual statements present in the Expected Answer that are missing from the Chatbot Answer
-
-Format example:
-{{
-  "better_answer": "expected",
-  "justification": "- Fact A is missing\\n- Fact B is incorrect\\nOverall explanation...",
-  "missing_facts": ["Fact A", "Fact B"]
-}}
-
-Respond with only the JSON object.
-"""
+        try:
+            # Initialize LLM based on judge provider
+            llm = self._init_llm()
+            if not llm:
+                # Fallback to manual evaluation for non-OpenAI providers
+                return await self._fallback_comparison(prompt, expected, actual)
+            
+            # Create evaluation input
+            eval_input = {
+                "input": prompt,
+                "prediction": actual,
+                "reference": expected
+            }
+            
+            # Load and run LangChain evaluators using loop (DRY optimization)
+            criteria = ["relevance", "completeness"]
+            criteria_results = {}
+            
+            for criterion in criteria:
+                evaluator = load_evaluator(
+                    EvaluatorType.CRITERIA,
+                    llm=llm,
+                    criteria=[criterion]
+                )
+                result = await evaluator.aevaluate_strings(**eval_input)
+                criteria_results[criterion] = result
+            
+            # Calculate combined score and justification
+            scores = [result.get("score", 0) for result in criteria_results.values()]
+            avg_score = sum(scores) / len(scores) if scores else 0.0
+            
+            # Determine better answer based on combined scores
+            if avg_score >= 0.8:  # High threshold for chatbot being better
+                better = "chatbot"
+            elif avg_score >= 0.6:  # Medium threshold for tie
+                better = "tie"
+            else:
+                better = "expected"
+            
+            # Combine justifications (using .get() for safety)
+            justification = "\n".join(
+                f"{criterion.capitalize()}: {criteria_results.get(criterion, {}).get('reasoning', 'No reasoning provided')}"
+                for criterion in criteria
+            )
+            
+            # Extract missing facts from completeness reasoning
+            completeness_reasoning = criteria_results.get("completeness", {}).get("reasoning", "")
+            missing_facts = self._extract_missing_facts(completeness_reasoning)
+            
+            log_rag_event("INFO", f"LangChain evaluation completed: {better} (avg_score: {avg_score:.2f})")
+            
+            return LLMComparison(
+                better_answer=better,
+                justification=justification,
+                missing_facts=missing_facts,
+            )
+            
+        except Exception as e:
+            log_rag_event("ERROR", f"LangChain evaluation failed: {e}")
+            # Fallback to manual evaluation
+            return await self._fallback_comparison(prompt, expected, actual)
+    
+    async def _fallback_comparison(
+        self, 
+        prompt: str, 
+        expected: str, 
+        actual: str
+    ) -> LLMComparison:
+        """
+        Fallback to manual evaluation when LangChain evaluation fails.
+        
+        Args:
+            prompt: Original user question
+            expected: Expected answer
+            actual: Actual chatbot answer
+            
+        Returns:
+            LLMComparison with judgment and missing facts
+        """
+        log_rag_event("INFO", "Using fallback manual evaluation")
         
         try:
             self._ensure_eval()
-            # Delegate to EvaluationService using configured judge_provider
+            # Use existing EvaluationService logic
             res = await self._eval.evaluate_response(
                 provider=self.judge_provider, output_text=actual, reference_text=expected
             )
-            # Map to LLMComparison; thresholded interpretation:
-            #  - score >= 4: chatbot answer is strong
-            #  - score == 3: tie
-            #  - score < 3: expected is better
+            # Map to LLMComparison using thresholds
             score = getattr(res, "match_level", 0)
             if score >= JUDGE_STRONG_THRESHOLD:
                 better = "chatbot"
@@ -214,18 +260,27 @@ Respond with only the JSON object.
                 better = "tie"
             else:
                 better = "expected"
-            # missing_facts are not yet produced by evaluators; return explicit marker
+                
             return LLMComparison(
                 better_answer=better,
                 justification=res.justification or "",
-                missing_facts=["No missing facts extracted by judge"]
-                if better != "chatbot" and not getattr(res, "metadata", {}).get("missing_facts")
-                else getattr(res, "metadata", {}).get("missing_facts", []),
+                missing_facts=getattr(res, "metadata", {}).get("missing_facts", []),
             )
         except Exception as e:
-            log_rag_event("ERROR", f"LLM comparison failed: {e}")
+            log_rag_event("ERROR", f"Fallback evaluation failed: {e}")
             return LLMComparison(
                 better_answer="tie",
-                justification=f"LLM comparison error: {str(e)}",
+                justification=f"Evaluation error: {str(e)}",
                 missing_facts=[],
             )
+    
+    def _extract_missing_facts(self, reasoning: str) -> List[str]:
+        """Extract missing facts from evaluation reasoning."""
+        if not reasoning:
+            return []
+        
+        return [
+            (line.split(':', 1)[1].strip() if ':' in line else line.strip())
+            for line in reasoning.splitlines() 
+            if line.strip() and _MISSING_PATTERN.search(line)
+        ][:5]

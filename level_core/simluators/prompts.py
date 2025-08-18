@@ -4,7 +4,10 @@ Prompt builders for RAG workflows.
 from typing import List, Dict
 
 from .event_collector import log_rag_event
-from .constants import MAX_CONTEXT_CHARS, CONTEXT_JOIN_SEPARATOR
+
+# Prompt building constants
+MAX_CONTEXT_CHARS = 12000
+CONTEXT_JOIN_SEPARATOR = "\n\n---\n\n"
 
 
 def build_expected_answer_messages(selected_chunks: List[str], question: str, max_context_chars: int = MAX_CONTEXT_CHARS) -> List[Dict[str, str]]:
