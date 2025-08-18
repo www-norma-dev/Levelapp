@@ -11,6 +11,7 @@ from .base import BaseEvaluator
 from .schemas import EvaluationConfig, EvaluationResult
 from .openai import OpenAIEvaluator
 from .ionos import IonosEvaluator
+from .utils import extract_key_point
 
 class EvaluationService:
     """Service layer to manage evaluator configurations and orchestrate evaluations."""
@@ -63,7 +64,8 @@ class EvaluationService:
             self,
             provider: Literal["ionos", "openai"],
             output_text: str,
-            reference_text: str
+            reference_text: str,
+            user_message: str | None = None
     ) -> EvaluationResult:
         """
         Perform evaluation using the configured provider.
@@ -83,4 +85,17 @@ class EvaluationService:
             raise ValueError(f"[evaluate_response] No configuration set for provider: {provider}")
 
         evaluator = self._select_evaluator(provider=provider)
-        return await evaluator.evaluate(generated_text=output_text, expected_text=reference_text)
+        result = await evaluator.evaluate(generated_text=output_text, expected_text=reference_text, user_message=user_message)
+        # Post-process: deterministic key point extraction (overrides any LLM hallucinated ones)
+        kp_user = extract_key_point(user_message or "") if user_message else ""
+        kp_expected = extract_key_point(reference_text)
+        kp_generated = extract_key_point(output_text)
+        result.metadata = result.metadata or {}
+        # Only set if missing to allow future override preference; but user wants reliable => overwrite
+        result.metadata.update({
+            "user_key_point": kp_user,
+            "expected_key_point": kp_expected,
+            "generated_key_point": kp_generated,
+            "key_point_method": "heuristic_v1"
+        })
+        return result

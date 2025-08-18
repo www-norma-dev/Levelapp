@@ -143,6 +143,24 @@ async def main_evaluate(request: MainEvaluationRequest):
         from fastapi.encoders import jsonable_encoder
         serializable_results = jsonable_encoder(results)
 
+        # Save to Firestore if configuration is available
+        try:
+            from level_core.datastore.registry import get_datastore
+            from config.loader import get_database_config
+            import uuid
+
+            db_config = get_database_config("config.yaml")
+            firestore_service = get_datastore(backend="firestore", config=db_config)
+            firestore_service.save_batch_test_results(
+                user_id="test-user",
+                project_id=request.test_name,
+                batch_id=f"batch-{uuid.uuid4()}",
+                data=serializable_results
+            )
+            print(f"Results saved to Firestore for test: {request.test_name}")
+        except Exception as e:
+            print(f"Failed to save to Firestore: {e}")
+            # Continue without failing the entire evaluation
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
