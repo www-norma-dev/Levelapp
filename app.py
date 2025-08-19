@@ -92,6 +92,8 @@ class MainEvaluationRequest(BaseModel):
     model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID for headers")
     attempts: int = Field(default=1, description="Number of test attempts")
     test_name: str = Field(default="api_test", description="Name for the test run")
+    user_id: str
+    project_id: str
 
 
 @app.post("/evaluate", tags=["Main"])
@@ -152,15 +154,16 @@ async def main_evaluate(request: MainEvaluationRequest):
             db_config = get_database_config("config.yaml")
             firestore_service = get_datastore(backend="firestore", config=db_config)
             firestore_service.save_batch_test_results(
-                user_id="test-user",
-                project_id=request.test_name,
+                user_id=request.user_id,
+                project_id=request.project_id,
                 batch_id=f"batch-{uuid.uuid4()}",
-                data=serializable_results
+                data=serializable_results,
             )
-            print(f"Results saved to Firestore for test: {request.test_name}")
+            print(f"Results saved to Firestore for project: {request.project_id}")
         except Exception as e:
             print(f"Failed to save to Firestore: {e}")
             # Continue without failing the entire evaluation
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -172,6 +175,7 @@ async def main_evaluate(request: MainEvaluationRequest):
                 "results": serializable_results,
             },
         )
+
 
     except HTTPException:
         raise
