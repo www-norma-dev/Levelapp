@@ -1,3 +1,15 @@
 database:
   type: firestore
   project_id: levelapp-dev-90113
+
+providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    api_url: https://api.openai.com/v1
+    model_id: gpt-4o-mini
+
+  ionos:
+    api_key: ${IONOS_API_KEY}
+    api_url: ${IONOS_ENDPOINT}
+    model_id: 0b6c4a15-bb8d-4092-82b0-f357b77c59fd
+

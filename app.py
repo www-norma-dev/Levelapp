@@ -31,21 +31,6 @@ async def lifespan(app: FastAPI):
         evaluation_service = EvaluationService(logger=Logger("EvaluationService"))
         
         # Set up default configurations if environment variables are available
-        if os.getenv("IONOS_API_KEY"):
-            ionos_config = EvaluationConfig(
-                api_url=os.getenv("IONOS_ENDPOINT"),
-                api_key=os.getenv("IONOS_API_KEY"),
-                model_id="0b6c4a15-bb8d-4092-82b0-f357b77c59fd",
-            )
-            evaluation_service.set_config(provider="ionos", config=ionos_config)
-        
-        if os.getenv("OPENAI_API_KEY"):
-            openai_config = EvaluationConfig(
-                api_url="",
-                api_key=os.getenv("OPENAI_API_KEY"),
-                model_id="",
-            )
-            evaluation_service.set_config(provider="openai", config=openai_config)
             
         print("✅ LevelApp API started successfully")
         
@@ -195,5 +180,3 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
-
-
