@@ -3,7 +3,7 @@ levelapp_core_simulators/service.py: Generic service layer for conversation simu
 """
 import asyncio
 import time
-from typing import Dict, Any, List, Callable, Optional
+from typing import Dict, Any, List, Callable, Optional, cast
 from collections import defaultdict
 from datetime import datetime
 from .schemas import InteractionEvaluationResult, Interaction, BasicConversation, ConversationBatch
@@ -19,6 +19,7 @@ from level_core.simluators.schemas import ConversationBatch
 from level_core.evaluators.service import EvaluationService
 from level_core.evaluators.utils import evaluate_metadata
 from level_core.config.Adapter import EndpointConfig
+from level_core.config.ResponseAdapter import adapt_agent_response
 class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
@@ -39,13 +40,14 @@ class ConversationSimulator:
         self.payload_adapter = payload_adapter
         self.endpoint_configuration = endpoint_configuration
 
-    def setup_simulator(self, endpoint: str = None, headers: Dict[str, str] = None):
+    def setup_simulator(self, endpoint: Optional[str] = None, headers: Optional[Dict[str, str]] = None):
         """
         Set up the simulator with endpoint and headers, or use Adapter if available.
         """
         if self.endpoint_configuration:
-            self.endpoint = self.endpoint_configuration.full_url
-            self.headers = self.endpoint_configuration.headers
+            # Cast computed fields to satisfy type checker
+            self.endpoint = cast(str, self.endpoint_configuration.full_url)
+            self.headers = cast(Dict[str, str], self.endpoint_configuration.headers)
         else:
             self.endpoint = endpoint
             self.headers = headers
@@ -178,17 +180,17 @@ class ConversationSimulator:
                 user_message = interaction.user_message
                 # User should set the payload template in EndpointConfig, e.g. {"prompt": "${user_message}"}
                 self.endpoint_configuration.variables = {"user_message": user_message}
-                payload = self.endpoint_configuration.payload
+                payload = cast(Dict[str, Any], self.endpoint_configuration.payload)
                 response = await async_request(
-                    url=self.endpoint_configuration.full_url,
-                    headers=self.endpoint_configuration.headers,
+                    url=cast(str, self.endpoint_configuration.full_url),
+                    headers=cast(Dict[str, str], self.endpoint_configuration.headers),
                     payload=payload,
                 )
             else:
                 payload = {"prompt": interaction.user_message}
                 response = await async_request(
-                    url=self.endpoint,
-                    headers=self.headers,
+                    url=cast(str, self.endpoint),
+                    headers=cast(Dict[str, str], self.headers),
                     payload=payload,
                 )
             if not response or not response.status_code == 200:
@@ -209,11 +211,16 @@ class ConversationSimulator:
                 results.append(result)
                 continue
     
-            evaluation_results= await self.evaluate_interaction(response.text, interaction.reference_reply)
-
+            # Previous behavior (kept for reference):
+            # evaluation_results = await self.evaluate_interaction(response.text, interaction.reference_reply)
+            # New behavior: adapt any response shape to a clean text string
+            agent_text = adapt_agent_response(response)
+            evaluation_results = await self.evaluate_interaction(agent_text, interaction.reference_reply)
+    
             result = {
                 "user_message": interaction.user_message,
-                "agent_reply": response.text,
+                # "agent_reply": response.text,  # previous raw text
+                "agent_reply": agent_text,
                 "reference_reply": getattr(interaction, 'reference_reply', None),
                 "interaction_type": None,
                 "reference_metadata": getattr(interaction, 'reference_metadata', {}),
