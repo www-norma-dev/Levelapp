@@ -34,26 +34,7 @@ async def lifespan(app: FastAPI):
         print("Evaluation service initialized")
         
         # Set up default configurations if environment variables are available
-        if os.getenv("IONOS_API_KEY"):
-            print("IONOS API key found")
-            ionos_config = EvaluationConfig(
-                api_url=os.getenv("IONOS_ENDPOINT"),
-                api_key=os.getenv("IONOS_API_KEY"),
-                model_id="0b6c4a15-bb8d-4092-82b0-f357b77c59fd",
-            )
-            evaluation_service.set_config(provider="ionos", config=ionos_config)
-        
-        if os.getenv("OPENAI_API_KEY"):
-            print(f"OpenAI API key found: {os.getenv('OPENAI_API_KEY')[:20]}...")
-            openai_config = EvaluationConfig(
-                api_url="",
-                api_key=os.getenv("OPENAI_API_KEY"),
-                model_id="",
-            )
-            evaluation_service.set_config(provider="openai", config=openai_config)
-        else:
-            print("No OpenAI API key found!")
-            
+
         print("LevelApp API started successfully")
         
     except Exception as e:
@@ -197,7 +178,6 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
-
 
 # Add to existing imports
 from rag_routes import rag_router
