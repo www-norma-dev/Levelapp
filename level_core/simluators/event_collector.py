@@ -23,3 +23,26 @@ def add_event(level: str, message: str, context: Optional[Dict[str, Any]] = None
         "context": context or {}
     }) 
     
+
+def log_rag_event(level: str, message: str, extra_data: Dict[str, Any] = None):
+    """
+    Log RAG-specific events for tracking human-in-the-loop workflow.
+    
+    Args:
+        level: Log level (INFO, ERROR, WARNING)
+        message: Log message
+        extra_data: Additional data to log
+    """
+    from datetime import datetime
+    
+    event_data = {
+        "component": "rag_evaluation",
+        "level": level,
+        "message": message,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    if extra_data:
+        event_data.update(extra_data)
+    
+    add_event(level, f"[RAG] {message}", extra_data)

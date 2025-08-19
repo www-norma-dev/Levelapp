@@ -1,0 +1,7 @@
+# Local tooling and scratch files
+test_rag_interactive.py
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
