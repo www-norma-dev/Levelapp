@@ -14,63 +14,22 @@ from .base import BaseEvaluator
 
 class IonosEvaluator(BaseEvaluator):
     """Evaluator that uses the IONOS inference API to score agent responses."""
-    def build_prompt(self, generated_text: str, expected_text: str) -> str:
-        """
-        Construct an evaluation prompt based on expected and generated text.
 
-        Returns:
-            str: Instructional prompt for the LLM to return a structured JSON evaluation.
-        """
-        return f"""
-        You are an expert text evaluator. Your task is to evaluate how well the agent's generated text matches the expected text using semantic similarity, factual accuracy, and completeness.
-
-        Use this exact 6-point scale (0-5):
-
-        5 - Perfect Match: Generated text is semantically identical to expected text. All key information, meaning, and intent are preserved with only trivial differences (punctuation, minor word order).
-
-        4 - Excellent Match: Generated text captures all essential meaning and information with minor stylistic differences. No important details are missing or incorrect.
-
-        3 - Good Match: Generated text covers the main points accurately but may have some minor omissions, slight inaccuracies, or different phrasing that doesn't change core meaning.
-
-        2 - Moderate Match: Generated text captures the general idea but has noticeable differences, missing details, or minor factual errors that somewhat impact accuracy.
-
-        1 - Poor Match: Generated text addresses the topic but has significant omissions, factual errors, or substantially different meaning from expected text.
-
-        0 - No Match: Generated text is completely unrelated, factually incorrect, or fails to address the expected content meaningfully.
-
-        Expected Output:
-        \"\"\"
-        {expected_text}
-        \"\"\"
-
-        Agent's Generated Output:
-        \"\"\"
-        {generated_text}
-        \"\"\"
-
-        Evaluation Instructions:
-        - Focus on semantic meaning rather than exact word matching
-        - Consider whether someone reading the generated text would get the same information as from the expected text
-        - Penalize factual inaccuracies more heavily than stylistic differences
-        - Be consistent in your scoring across similar cases
-
-        Return your evaluation as a valid JSON object with exactly these keys:
-        {{"match_level": <integer from 0 to 5>, "justification": "<brief explanation of score reasoning>"}}
-
-        Output only the JSON object and nothing else.
-        """
+    def build_prompt(self, user_message: str | None, generated_text: str, expected_text: str) -> str:
+        """Construct evaluation prompt (score + justification only)."""
+        user_msg = user_message or "(no user message provided)"
+        return "\n".join([
+            "You are an expert text evaluator. Compare generated text to expected text for semantic similarity, factual accuracy, completeness.",
+            "Provide a score 0-5 and a concise justification (<=35 words).",
+            "Scoring: 5 perfect; 4 excellent minor style diffs; 3 good minor omissions; 2 moderate noticeable gaps; 1 poor major issues; 0 no match.",
+            "User Message:", '"""', user_msg, '"""',
+            "Expected:", '"""', expected_text, '"""',
+            "Generated:", '"""', generated_text, '"""',
+            "Return ONLY JSON: {\"match_level\": <0-5>, \"justification\": \"<reason>\", \"metadata\": {}}",
+        ])
 
     async def call_llm(self, prompt: str) -> Union[Dict, str]:
-        """
-        Send the evaluation prompt to the IONOS API and return the parsed response.
-
-        Args:
-            prompt (str): The text prompt to evaluate.
-
-        Returns:
-            Union[Dict, str]: A dictionary representing the evaluation result,
-                              or an error message if the request fails.
-        """
+        """Send the evaluation prompt to the IONOS API and return parsed response."""
         url = f"{self.config.api_url}/{self.config.model_id}/predictions"
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
