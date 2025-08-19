@@ -36,36 +36,19 @@ class ConversationSimulator:
         self.collected_scores = defaultdict(list)
         self.evaluation_summaries = defaultdict(list)
         self.execution_events = []
-        # Payload builder; defaults to {"prompt": interaction.user_message}
-        self.payload_adapter = payload_adapter or (lambda interaction: {"prompt": getattr(interaction, "user_message", "")})
-        # Optional EndpointConfig to drive URL/headers/payload
+        self.payload_adapter = payload_adapter
         self.endpoint_configuration = endpoint_configuration
 
-
-    def setup_simulator(self, endpoint: str, headers: Dict[str, str], payload_adapter: Optional[Callable[[Any], Dict[str, Any]]] = None, endpoint_configuration: Optional[EndpointConfig] = None):
+    def setup_simulator(self, endpoint: str = None, headers: Dict[str, str] = None):
         """
-        Set up the simulator with endpoint and headers.
-
-        Args:
-            endpoint (str): The endpoint URL for the simulator.
-            headers (Dict[str, str]): HTTP headers for requests.
-            payload_adapter (Optional[Callable[[Any], Dict[str, Any]]]): Optional adapter to transform an interaction into a request payload.
+        Set up the simulator with endpoint and headers, or use Adapter if available.
         """
-        self.endpoint = endpoint
-        self.headers = headers
-        if payload_adapter:
-            self.payload_adapter = payload_adapter
-        # When provided, this will be used to build URL/headers/payload per interaction
-        if endpoint_configuration:
-            self.endpoint_configuration = endpoint_configuration
-
-    def set_payload_adapter(self, adapter: Callable[[Any], Dict[str, Any]]):
-        """Dynamically set/override the payload adapter.
-
-        Args:
-            adapter: Callable taking an interaction and returning a JSON-serializable dict payload.
-        """
-        self.payload_adapter = adapter
+        if self.endpoint_configuration:
+            self.endpoint = self.endpoint_configuration.full_url
+            self.headers = self.endpoint_configuration.headers
+        else:
+            self.endpoint = endpoint
+            self.headers = headers
 
     async def run_batch_test(self, name: str, test_load: Dict[str, Any], attempts: int = 1) -> Dict[str, Any]:
         """
@@ -191,24 +174,18 @@ class ConversationSimulator:
         results = []
         interactions_sequence = scenario.interactions
         for interaction in interactions_sequence:
-            # If EndpointConfig is set, use it to build the request directly; otherwise, use the adapter + endpoint/headers
             if self.endpoint_configuration:
-                # Populate variables for the template; provide both keys for convenience
                 user_message = interaction.user_message
-                self.endpoint_configuration.variables = {
-                    "user_message": user_message,
-                    "prompt": user_message,
-                }
-                ec = self.endpoint_configuration
-                payload_val = ec.payload() if callable(ec.payload) else ec.payload
-                payload = dict(payload_val or {"prompt": user_message})
+                # User should set the payload template in EndpointConfig, e.g. {"prompt": "${user_message}"}
+                self.endpoint_configuration.variables = {"user_message": user_message}
+                payload = self.endpoint_configuration.payload
                 response = await async_request(
-                    url=str(ec.full_url() if callable(ec.full_url) else ec.full_url),
-                    headers={str(k): str(v) for k, v in (ec.headers() if callable(ec.headers) else ec.headers or {}).items()},
+                    url=self.endpoint_configuration.full_url,
+                    headers=self.endpoint_configuration.headers,
                     payload=payload,
                 )
             else:
-                payload = self.payload_adapter(interaction)
+                payload = {"prompt": interaction.user_message}
                 response = await async_request(
                     url=self.endpoint,
                     headers=self.headers,
