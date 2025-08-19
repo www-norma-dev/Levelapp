@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,6 +37,8 @@ type EvaluationFormValues = {
 
 export default function EvaluatePage() {
   const { projectId } = useParams();
+  const { data: session } = useSession();
+  const userId = (session?.user as any)?.id || "";
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -73,6 +76,8 @@ export default function EvaluatePage() {
       model_id: values.modelId,
       attempts: 1,
       test_name: "manual_test",
+      user_id: userId,
+      project_id: projectId,
     };
 
     try {

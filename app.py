@@ -83,6 +83,8 @@ class MainEvaluationRequest(BaseModel):
     model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID for headers")
     attempts: int = Field(default=1, description="Number of test attempts")
     test_name: str = Field(default="api_test", description="Name for the test run")
+    user_id: str
+    project_id: str
 
 
 @app.post("/evaluate", tags=["Main"])
@@ -157,8 +159,8 @@ async def main_evaluate(request: MainEvaluationRequest):
         db_config = get_database_config("config.yaml")
         firestore_service = get_datastore(backend="firestore", config=db_config)
         firestore_service.save_batch_test_results(
-            user_id="test-user",
-            project_id=request.test_name,
+            user_id=request.user_id,
+            project_id=request.project_id,
             batch_id=f"batch-{uuid.uuid4()}",
             data=serializable_results
         )
@@ -171,7 +173,7 @@ async def main_evaluate(request: MainEvaluationRequest):
                 "endpoint": request.endpoint,
                 "model_id": request.model_id,
                 "attempts": request.attempts,
-                "results": serializable_results
+                "results": serializable_results,
             }
         )
         
