@@ -117,9 +117,9 @@ class RAGEvaluator:
             smoothing_function=smooth
         )
         
-        # ROUGE-L F1 - use rouge_scorer library
+        # ROUGE-L F1 - use rouge_scorer library with original strings
         scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
-        scores = scorer.score(" ".join(expected_tokens), " ".join(actual_tokens))
+        scores = scorer.score(expected, actual)
         rouge_l_f1 = scores["rougeL"].fmeasure
         
         # METEOR Score
@@ -132,17 +132,13 @@ class RAGEvaluator:
             overlap = len(ref_tokens_set & cand_tokens_set)
             meteor = 2 * overlap / (len(ref_tokens_set) + len(cand_tokens_set)) if (ref_tokens_set and cand_tokens_set) else 0.0
         
-        # BERTScore - placeholders for now
-        bertscore_precision = 0.0
-        bertscore_recall = 0.0
+        # BERTScore - placeholder for now
         bertscore_f1 = 0.0
 
         return RAGMetrics(
             bleu_score=bleu,
             rouge_l_f1=rouge_l_f1,
             meteor_score=meteor,
-            bertscore_precision=bertscore_precision,
-            bertscore_recall=bertscore_recall,
             bertscore_f1=bertscore_f1,
         )
     

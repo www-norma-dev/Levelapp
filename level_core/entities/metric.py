@@ -16,8 +16,6 @@ class RAGMetrics(BaseModel):
     bleu_score: float
     rouge_l_f1: float
     meteor_score: float
-    bertscore_precision: float
-    bertscore_recall: float
     bertscore_f1: float
 
 
