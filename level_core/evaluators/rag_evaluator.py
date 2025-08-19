@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
+from bert_score import score as bert_score
 
 # LangChain imports for evaluation
 from langchain.evaluation import EvaluatorType, load_evaluator
@@ -132,8 +133,13 @@ class RAGEvaluator:
             overlap = len(ref_tokens_set & cand_tokens_set)
             meteor = 2 * overlap / (len(ref_tokens_set) + len(cand_tokens_set)) if (ref_tokens_set and cand_tokens_set) else 0.0
         
-        # BERTScore - placeholder for now
-        bertscore_f1 = 0.0
+        # BERTScore - compute semantic similarity using pre-trained models
+        try:
+            _, _, bertscore_f1_tensor = bert_score([actual], [expected], lang="en", verbose=False)
+            bertscore_f1 = float(bertscore_f1_tensor[0])
+        except Exception as e:
+            log_rag_event("WARNING", f"BERTScore computation failed: {e}")
+            bertscore_f1 = 0.0
 
         return RAGMetrics(
             bleu_score=bleu,
