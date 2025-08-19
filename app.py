@@ -27,18 +27,23 @@ async def lifespan(app: FastAPI):
     global evaluation_service
     
     try:
+        print("Starting LevelApp API initialization...")
+        
         # Initialize evaluation service
         evaluation_service = EvaluationService(logger=Logger("EvaluationService"))
+        print("Evaluation service initialized")
         
         # Set up default configurations if environment variables are available
-            
-        print("✅ LevelApp API started successfully")
+
+        print("LevelApp API started successfully")
         
     except Exception as e:
-        print(f"❌ Error during startup: {e}")
+        print(f"Error during startup: {e}")
+        import traceback
+        traceback.print_exc()
     
     yield
-    print("🔄 LevelApp API shutting down...")
+    print("LevelApp API shutting down...")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -68,6 +73,8 @@ class MainEvaluationRequest(BaseModel):
     model_id: str = Field(default="meta-llama/Llama-3.3-70B-Instruct", description="Model ID for headers")
     attempts: int = Field(default=1, description="Number of test attempts")
     test_name: str = Field(default="api_test", description="Name for the test run")
+    user_id: str
+    project_id: str
 
 
 @app.post("/evaluate", tags=["Main"])
@@ -112,41 +119,31 @@ async def main_evaluate(request: MainEvaluationRequest):
         # Run the batch test (this is the main work)
         results = await simulator.run_batch_test(
             name=request.test_name,
-            test_load={}, 
-            attempts=request.attempts
+            test_load={},
+            attempts=request.attempts,
         )
-        
-        # Convert results to JSON-serializable format
-        def convert_uuid_to_str(obj):
-            """Recursively convert UUID objects to strings for JSON serialization"""
-            import uuid
-            if isinstance(obj, uuid.UUID):
-                return str(obj)
-            elif isinstance(obj, dict):
-                return {key: convert_uuid_to_str(value) for key, value in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_uuid_to_str(item) for item in obj]
-            elif hasattr(obj, '__dict__'):
-                return convert_uuid_to_str(obj.__dict__)
-            else:
-                return obj
-        
+        # Convert results to JSON-serializable format using FastAPI encoder
         from fastapi.encoders import jsonable_encoder
         serializable_results = jsonable_encoder(results)
 
+        # Save to Firestore if configuration is available
+        try:
+            from level_core.datastore.registry import get_datastore
+            from config.loader import get_database_config
+            import uuid
 
-        from level_core.datastore.registry import get_datastore
-        from config.loader import get_database_config
-        import uuid
-
-        db_config = get_database_config("config.yaml")
-        firestore_service = get_datastore(backend="firestore", config=db_config)
-        firestore_service.save_batch_test_results(
-            user_id="test-user",
-            project_id=request.test_name,
-            batch_id=f"batch-{uuid.uuid4()}",
-            data=serializable_results
-        )
+            db_config = get_database_config("config.yaml")
+            firestore_service = get_datastore(backend="firestore", config=db_config)
+            firestore_service.save_batch_test_results(
+                user_id=request.user_id,
+                project_id=request.project_id,
+                batch_id=f"batch-{uuid.uuid4()}",
+                data=serializable_results,
+            )
+            print(f"Results saved to Firestore for project: {request.project_id}")
+        except Exception as e:
+            print(f"Failed to save to Firestore: {e}")
+            # Continue without failing the entire evaluation
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -156,16 +153,17 @@ async def main_evaluate(request: MainEvaluationRequest):
                 "endpoint": request.endpoint,
                 "model_id": request.model_id,
                 "attempts": request.attempts,
-                "results": serializable_results
-            }
+                "results": serializable_results,
+            },
         )
-        
+
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Evaluation failed: {str(e)}"
+            detail=f"Evaluation failed: {str(e)}",
         )
 
 
@@ -180,3 +178,9 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+
+# Add to existing imports
+from rag_routes import rag_router
+
+# Add to existing app initialization
+app.include_router(rag_router)
