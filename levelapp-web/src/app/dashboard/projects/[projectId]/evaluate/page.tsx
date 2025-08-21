@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/accordion";
 
 type EvaluationFormValues = {
+  EvaulationTitle?: string;
   userMessage: string;
   referenceReply: string;
   interactionType: string;
@@ -44,6 +45,7 @@ export default function EvaluatePage() {
 
   const form = useForm<EvaluationFormValues>({
     defaultValues: {
+      EvaulationTitle: "",
       userMessage: "",
       referenceReply: "",
       interactionType: "opening",
@@ -75,7 +77,7 @@ export default function EvaluatePage() {
       endpoint: `${process.env.NEXT_PUBLIC_BACKEND_ENDPOINT}`,
       model_id: values.modelId,
       attempts: 1,
-      test_name: "manual_test",
+      test_name: values.EvaulationTitle,
       user_id: userId,
       project_id: projectId,
     };
@@ -126,6 +128,19 @@ export default function EvaluatePage() {
               onSubmit={form.handleSubmit(handleSubmit)}
               className="space-y-4"
             >
+              <FormField
+                control={form.control}
+                name="EvaulationTitle"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter evaluation title" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="userMessage"
@@ -219,7 +234,6 @@ export default function EvaluatePage() {
           </Form>
         </div>
 
-        {/*  Results Column */}
         <div className="flex-[2] bg-gray-50 rounded-xl shadow-lg p-6 border border-gray-300 overflow-y-auto">
           <h1 className="text-xl font-bold mb-4 text-gray-900">Results</h1>
           {result ? (

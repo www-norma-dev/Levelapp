@@ -34,6 +34,14 @@ type ListResponse = {
   nextCursor: string | null;
   count: number;
 };
+const slugify = (s: string) =>
+  s
+    .toLowerCase()
+    .trim()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .slice(0, 80);
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -125,7 +133,7 @@ export default function ProjectsPage() {
         throw new Error(err.error || `Create failed: ${res.status}`);
       }
       const created: Project = await res.json();
-      setProjects((prev) => [created, ...prev]); // optimistic prepend
+      setProjects((prev) => [created, ...prev]);
       toast({ description: "Project created successfully!" });
     } catch (e) {
       console.error(e);
@@ -174,8 +182,12 @@ export default function ProjectsPage() {
                   key={project.id}
                   className="border border-gray-200 shadow-sm rounded-2xl hover:shadow-md hover:-translate-y-1 transition cursor-pointer"
                   onClick={() =>
-                    router.push(`/dashboard/projects/${project.id}`)
-                  } // consider using id for uniqueness
+                    router.push(
+                      `/dashboard/projects/${slugify(
+                        project.name
+                      )}?id=${encodeURIComponent(project.id)}`
+                    )
+                  }
                 >
                   <CardHeader className="p-6 bg-gray-50 rounded-t-2xl">
                     <div className="flex justify-between items-start">
@@ -243,7 +255,6 @@ export default function ProjectsPage() {
         </>
       )}
 
-      {/* Delete Confirmation */}
       {deleteProjectId && (
         <AlertDialog open onOpenChange={() => setDeleteProjectId(null)}>
           <AlertDialogContent>
