@@ -126,6 +126,14 @@ async def main_evaluate(request: MainEvaluationRequest):
         from fastapi.encoders import jsonable_encoder
         serializable_results = jsonable_encoder(results)
 
+        enriched_results = {
+            **serializable_results,
+            "test_name": request.test_name, 
+            "modelId": request.model_id,
+            "attempts": request.attempts,
+        }
+        print(f"DEBUG: Enriched results: {json.dumps(enriched_results, indent=2)}")
+
         # Save to Firestore if configuration is available
         try:
             from level_core.datastore.registry import get_datastore
@@ -138,7 +146,7 @@ async def main_evaluate(request: MainEvaluationRequest):
                 user_id=request.user_id,
                 project_id=request.project_id,
                 batch_id=f"batch-{uuid.uuid4()}",
-                data=serializable_results,
+                data=enriched_results,
             )
             print(f"Results saved to Firestore for project: {request.project_id}")
         except Exception as e:
