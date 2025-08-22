@@ -18,6 +18,8 @@ from .event_collector import add_event
 from level_core.simluators.schemas import ConversationBatch
 from level_core.evaluators.service import EvaluationService
 from level_core.evaluators.utils import evaluate_metadata
+from level_core.adapter.adapter import EndpointConfig
+
 class ConversationSimulator:
     """
     Generic service to simulate conversations and evaluate interactions.
@@ -37,9 +39,10 @@ class ConversationSimulator:
         self.collected_scores = defaultdict(list)
         self.evaluation_summaries = defaultdict(list)
         self.execution_events = []  # Collect execution events instead of logging
+        self.endpoint_config = EndpointConfig()
 
 
-    def setup_simulator(self, endpoint: str, headers: Dict[str, str]):
+    def setup_simulator(self, endpoint: str = None, headers: dict = None, template_path: str = None, variables: dict = None):
         """
         Set up the simulator with endpoint and headers.
 
@@ -47,8 +50,13 @@ class ConversationSimulator:
             endpoint (str): The endpoint URL for the simulator.
             headers (Dict[str, str]): HTTP headers for requests.
         """
-        self.endpoint = endpoint
-        self.headers = headers
+        # Load template and variables using EndpointConfig
+        if template_path:
+            self.endpoint_config.load_template(template_path)
+        if variables:
+            self.endpoint_config.variables = variables
+        self.endpoint = str(self.endpoint_config.base_url) if not endpoint else endpoint
+        self.headers = self.endpoint_config.headers if not headers else headers
 
     async def run_batch_test(self, name: str, test_load: Dict[str, Any], attempts: int = 1) -> Dict[str, Any]:
         """
@@ -174,7 +182,9 @@ class ConversationSimulator:
         results = []
         interactions_sequence = scenario.interactions
         for interaction in interactions_sequence:
-            payload = {"prompt": interaction.user_message}
+            # Set variables for this interaction
+            self.endpoint_config.variables = {"user_message": interaction.user_message}
+            payload = self.endpoint_config.payload
             response = await async_request(
                 url=self.endpoint,
                 headers=self.headers,
