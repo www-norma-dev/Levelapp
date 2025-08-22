@@ -182,5 +182,44 @@ if __name__ == "__main__":
 # Add to existing imports
 from rag_routes import rag_router
 
+# Orchestrator imports and endpoint
+from level_core.evaluators.orchestrator import OrchestratorService
+from level_core.evaluators import WorkflowPrepareRequest, LaunchResponse, ErrorCode
+from fastapi import Depends, Response
+
+def get_orchestrator_service() -> OrchestratorService:
+    """Dependency injection for orchestrator"""
+    return OrchestratorService(
+        evaluation_service=evaluation_service,
+        logger=Logger("Orchestrator")
+    )
+
+from typing import Optional
+from fastapi import Body
+
+@app.post("/orchestrator/{project_id}/{workflow_type}/prepare", 
+          response_model=LaunchResponse, tags=["Orchestrator"])
+async def prepare_evaluation_workflow(
+    project_id: str,
+    workflow_type: str,
+    response: Response,
+    request: Optional[WorkflowPrepareRequest] = Body(default=None),
+    orchestrator: OrchestratorService = Depends(get_orchestrator_service)
+) -> LaunchResponse:
+    """
+    Orchestrate evaluation workflow: verify → init → launch
+    Returns success with launch token or structured failure report.
+    """
+    seed = request.seed if request else {}
+    result = await orchestrator.prepare_workflow(
+        project_id=project_id,
+        workflow_type=workflow_type,
+        seed=seed
+    )
+    # Set 429 status for rate limiting
+    if not result.success and result.verification and ErrorCode.RATE_LIMITED in result.verification.codes:
+        response.status_code = 429
+    return result
+
 # Add to existing app initialization
 app.include_router(rag_router)
